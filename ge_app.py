@@ -812,7 +812,7 @@ top_n = st.sidebar.slider(
 
 enable_map_click_selection = st.sidebar.checkbox(
     "Enable map click selection",
-    value=False,
+    value=True,
     help=(
         "Turn this on when you want to select countries from the map. "
         "Turn it off when panning or zooming to avoid accidental selection."
