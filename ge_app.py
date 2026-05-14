@@ -999,16 +999,16 @@ else:
                     name="Selected country",
                 )
             )
-
+            
     fig_map.update_layout(
         height=760,
-        margin=dict(l=0, r=125, t=20, b=0),
+        margin=dict(l=0, r=25, t=10, b=0),
 
         coloraxis_colorbar=dict(
             title=map_metric_label,
-            thickness=14,
-            len=0.58,
-            x=0.965,
+            thickness=12,
+            len=0.50,
+            x=0.985,
             xanchor="left",
             y=0.50,
             yanchor="middle",
@@ -1016,12 +1016,14 @@ else:
 
         geo=dict(
             domain=dict(
-                x=[0.00, 0.91],
+                x=[0.00, 0.965],
                 y=[0.00, 1.00],
             ),
             showframe=False,
             showcoastlines=False,
             projection_type="natural earth",
+            projection_scale=1.12,
+            center=dict(lat=10, lon=5),
         ),
 
         showlegend=False,
