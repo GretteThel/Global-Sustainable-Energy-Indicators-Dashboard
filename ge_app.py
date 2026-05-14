@@ -956,26 +956,32 @@ else:
                 )
             )
 
-    fig_map.update_layout(
-        height=650,
-        margin=dict(l=0, r=95, t=20, b=0),
-        coloraxis_colorbar=dict(
-            title=map_metric_label,
-            thickness=14,
-            len=0.58,
-            x=0.93,
-            xanchor="left",
-            y=0.50,
-            yanchor="middle",
+fig_map.update_layout(
+    height=720,
+    margin=dict(l=0, r=170, t=20, b=0),
+
+    coloraxis_colorbar=dict(
+        title=map_metric_label,
+        thickness=14,
+        len=0.62,
+        x=1.02,
+        xanchor="left",
+        y=0.50,
+        yanchor="middle",
+    ),
+
+    geo=dict(
+        domain=dict(
+            x=[0.00, 0.94],
+            y=[0.00, 1.00],
         ),
-        geo=dict(
-            domain=dict(x=[0.00, 0.86], y=[0.00, 1.00]),
-            showframe=False,
-            showcoastlines=False,
-            projection_type="natural earth",
-        ),
-        showlegend=False,
-    )
+        showframe=False,
+        showcoastlines=False,
+        projection_type="natural earth",
+    ),
+
+    showlegend=False,
+)
 
     if enable_map_click_selection:
         map_event = plotly_selectable_chart(fig_map, key=map_key, config=MAP_CONFIG)
@@ -1288,7 +1294,10 @@ with trend_col:
 # ============================================================
 
 with profile_col:
-    st.markdown(f"### 5. Indicator profile ({snapshot_year})")
+    if focus_country is None:
+    st.markdown(f"### 5. Global median indicator profile ({snapshot_year})")
+else:
+    st.markdown(f"### 5. Selected country vs dashboard median ({snapshot_year})")
 
     profile_metrics = {
         "Electricity access": "electricity_access_pct",
