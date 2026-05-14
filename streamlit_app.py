@@ -82,14 +82,25 @@ st.markdown(
 
 
 # ============================================================
-# CONSTANTS
+# DESIGN CONSTANTS
 # ============================================================
+
+SELECTED_COLOUR = "#ff4b4b"
+BASE_BLUE = "#9ecae1"
+DARK_BLUE = "#0878b8"
+MUTED_BLUE = "rgba(158, 202, 225, 0.35)"
 
 OKABE_BLUE = "#0072B2"
 OKABE_ORANGE = "#E69F00"
 OKABE_GREEN = "#009E73"
 OKABE_PURPLE = "#CC79A7"
 OKABE_GREY = "#999999"
+OKABE_SKY = "#56B4E9"
+OKABE_RED_ORANGE = "#D55E00"
+
+SELECTED_LINE_WIDTH = 4
+NORMAL_LINE_WIDTH = 2
+
 DARK_TEXT = "#0f172a"
 MUTED_TEXT = "#64748b"
 
@@ -239,12 +250,10 @@ COLUMN_CANDIDATES = {
 # ============================================================
 
 def normalise_name(name: str) -> str:
-    """Normalise column names so that spaces, newlines, brackets, and symbols do not break matching."""
     return re.sub(r"[^a-z0-9]+", "", str(name).lower())
 
 
 def find_column(df: pd.DataFrame, possible_names: list[str]) -> str | None:
-    """Find a dataset column using exact and normalised matching."""
     columns = list(df.columns)
 
     for name in possible_names:
@@ -269,7 +278,6 @@ def find_column(df: pd.DataFrame, possible_names: list[str]) -> str | None:
 
 
 def clean_numeric(series: pd.Series) -> pd.Series:
-    """Convert columns with commas, symbols, or text formatting into numeric values."""
     cleaned = (
         series.astype(str)
         .str.replace("\u00a0", "", regex=False)
@@ -311,12 +319,100 @@ def make_kpi(label, value, help_text):
     )
 
 
+def no_data_message(message: str):
+    st.info(
+        f"Not enough complete data is available for this visual. {message} "
+        "Try changing the year, metric, focus country, or filters."
+    )
+
+
+def get_points_from_event(event):
+    """
+    Handles Streamlit's built-in Plotly selection event format.
+    This avoids the previous session_state error and supports linked selection.
+    """
+    if event is None:
+        return []
+
+    if isinstance(event, dict):
+        selection = event.get("selection", {})
+        if isinstance(selection, dict):
+            return selection.get("points", []) or []
+        return []
+
+    try:
+        selection = event.selection
+        return selection.points or []
+    except Exception:
+        return []
+
+
+def extract_country_from_selection(event, valid_countries):
+    """
+    Extracts the clicked/selected country from a Plotly selection event.
+    Works for map, bar chart, scatter plot, and trend chart.
+    """
+    points = get_points_from_event(event)
+
+    if not points:
+        return None
+
+    point = points[0]
+
+    if not isinstance(point, dict):
+        try:
+            point = dict(point)
+        except Exception:
+            return None
+
+    possible_values = [
+        point.get("customdata"),
+        point.get("location"),
+        point.get("y"),
+        point.get("x"),
+        point.get("hovertext"),
+        point.get("text"),
+    ]
+
+    for value in possible_values:
+        if hasattr(value, "tolist"):
+            value = value.tolist()
+
+        if isinstance(value, (list, tuple)) and len(value) > 0:
+            value = value[0]
+
+        if isinstance(value, str):
+            cleaned = value.replace("★", "").replace("(selected)", "").strip()
+
+            if cleaned in valid_countries:
+                return cleaned
+
+    return None
+
+
+def update_focus_country(event, source_name, valid_countries):
+    """
+    Updates the shared focus country from chart selection.
+    Important: this modifies st.session_state['focus_country'], not the selectbox key.
+    """
+    clicked_country = extract_country_from_selection(event, valid_countries)
+
+    if clicked_country and clicked_country in valid_countries:
+        current_country = st.session_state.get("focus_country")
+
+        if clicked_country != current_country:
+            st.session_state["focus_country"] = clicked_country
+            st.toast(f"Focus country changed to {clicked_country} from {source_name}.")
+            st.rerun()
+
+
 def plotly_selectable_chart(fig, key: str):
     """
-    Uses Streamlit's built-in Plotly selection when available.
-    If the installed Streamlit version is old, the chart still displays,
-    but linked clicking will not work until Streamlit is upgraded.
+    Uses Streamlit's built-in Plotly point selection.
+    Click/select a country, bar, point, or line point to update the dashboard.
     """
+    fig.update_layout(clickmode="event+select")
+
     try:
         return st.plotly_chart(
             fig,
@@ -333,84 +429,72 @@ def plotly_selectable_chart(fig, key: str):
             key=key,
             config=PLOT_CONFIG,
         )
+        st.warning(
+            "Your Streamlit version does not support built-in Plotly selection. "
+            "Upgrade Streamlit to use linked clicking: pip install --upgrade streamlit"
+        )
         return None
 
 
-def extract_country_from_selection(event, valid_countries: set[str]) -> str | None:
-    """Extract selected country name from Plotly selection event."""
-    if event is None:
-        return None
-
-    try:
-        selection = event.selection
-    except Exception:
-        selection = None
-
-    if selection is None and isinstance(event, dict):
-        selection = event.get("selection", None)
-
-    if selection is None:
-        return None
-
-    if isinstance(selection, dict):
-        points = selection.get("points", [])
-    else:
-        points = getattr(selection, "points", [])
-
-    if not points:
-        return None
-
-    point = points[0]
-
-    if not isinstance(point, dict):
-        try:
-            point = dict(point)
-        except Exception:
-            return None
-
-    candidates = []
-
-    customdata = point.get("customdata", None)
-    if isinstance(customdata, (list, tuple)) and len(customdata) > 0:
-        candidates.append(customdata[0])
-    elif isinstance(customdata, str):
-        candidates.append(customdata)
-
-    for key in ["location", "hovertext", "text", "label", "y", "x"]:
-        if key in point:
-            candidates.append(point.get(key))
-
-    for item in candidates:
-        if isinstance(item, str) and item in valid_countries:
-            return item
-
-    return None
-
-
-def update_focus_country(event, source_name: str, valid_countries: set[str]):
+def append_focus_row(base_df, full_year_df, focus_country, required_cols=None):
     """
-    Updates the internal focus country when a country is clicked in a visual.
-
-    Important:
-    We update st.session_state["focus_country"], NOT the dropdown widget key.
-    The dropdown widget key is "focus_country_dropdown".
+    Keeps the selected country visible even if it is outside the top-N ranking
+    or outside the main visual subset.
     """
-    clicked_country = extract_country_from_selection(event, valid_countries)
+    if required_cols is None:
+        required_cols = []
 
-    if clicked_country and clicked_country in valid_countries:
-        current_country = st.session_state.get("focus_country")
+    if focus_country in base_df["entity"].values:
+        return base_df.copy()
 
-        if clicked_country != current_country:
-            st.session_state["focus_country"] = clicked_country
-            st.toast(f"Focus country changed to {clicked_country} from {source_name}.")
-            st.rerun()
+    focus_row = full_year_df[full_year_df["entity"] == focus_country].copy()
+
+    if focus_row.empty:
+        return base_df.copy()
+
+    if required_cols:
+        focus_row = focus_row.dropna(subset=required_cols)
+
+    if focus_row.empty:
+        return base_df.copy()
+
+    combined = pd.concat([base_df, focus_row], ignore_index=True)
+    combined = combined.drop_duplicates(subset=["entity"], keep="last")
+
+    return combined
 
 
-def no_data_message(message: str):
-    st.info(
-        f"Not enough complete data is available for this visual. {message} "
-        "Try changing the year, metric, focus country, or filters."
+def prepare_ranking_data(snapshot_df, full_year_df, ranking_col, top_n, focus_country):
+    """
+    Shows top N countries and appends the selected country if it is not already included.
+    This is why the ranking chart now changes when a map/scatter/trend country is clicked.
+    """
+    rank_df = snapshot_df[["entity", ranking_col]].dropna(subset=[ranking_col]).copy()
+
+    if rank_df.empty:
+        return rank_df
+
+    rank_df = rank_df.sort_values(ranking_col, ascending=False)
+    top_df = rank_df.head(top_n).copy()
+
+    if focus_country not in top_df["entity"].values:
+        focus_row = full_year_df[
+            (full_year_df["entity"] == focus_country) &
+            (full_year_df[ranking_col].notna())
+        ][["entity", ranking_col]].copy()
+
+        if not focus_row.empty:
+            top_df = pd.concat([top_df, focus_row], ignore_index=True)
+
+    top_df = top_df.drop_duplicates(subset=["entity"], keep="last")
+    top_df["is_selected"] = top_df["entity"] == focus_country
+    top_df["display_entity"] = np.where(
+        top_df["is_selected"],
+        top_df["entity"] + " ★",
+        top_df["entity"],
     )
+
+    return top_df.sort_values(ranking_col, ascending=True)
 
 
 # ============================================================
@@ -454,16 +538,10 @@ def load_data():
     df = df.dropna(subset=["entity", "year"]).copy()
     df["year"] = df["year"].astype(int)
 
-    numeric_cols = [
-        col for col in df.columns
-        if col not in ["entity"]
-    ]
-
-    for col in numeric_cols:
-        if col != "year":
+    for col in df.columns:
+        if col not in ["entity", "year"]:
             df[col] = clean_numeric(df[col])
 
-    # Derived population estimate from population density and land area
     if {"population_density_per_km2", "land_area_km2"}.issubset(df.columns):
         df["estimated_population"] = (
             df["population_density_per_km2"] * df["land_area_km2"]
@@ -473,7 +551,6 @@ def load_data():
         df["estimated_population"] = np.nan
         df["estimated_population_millions"] = np.nan
 
-    # CO2 per person
     if "co2_direct_tonnes_per_capita" in df.columns:
         df["co2_person_tonnes"] = df["co2_direct_tonnes_per_capita"]
         co2_source = "dataset CO₂/person column"
@@ -488,7 +565,6 @@ def load_data():
         df["co2_person_tonnes"] = np.nan
         co2_source = "not available"
 
-    # Total electricity generation
     generation_cols = [
         "electricity_fossil_twh",
         "electricity_nuclear_twh",
@@ -501,7 +577,6 @@ def load_data():
 
     df["electricity_total_twh"] = df[generation_cols].sum(axis=1, min_count=1)
 
-    # GDP groups for filtering
     if "gdp_per_capita" in df.columns:
         conditions = [
             df["gdp_per_capita"] < 2_000,
@@ -509,13 +584,19 @@ def load_data():
             (df["gdp_per_capita"] >= 10_000) & (df["gdp_per_capita"] < 25_000),
             df["gdp_per_capita"] >= 25_000,
         ]
+
         labels = [
             "Very low GDP/capita",
             "Low GDP/capita",
             "Middle GDP/capita",
             "High GDP/capita",
         ]
-        df["gdp_group"] = np.select(conditions, labels, default="Missing GDP/capita")
+
+        df["gdp_group"] = np.select(
+            conditions,
+            labels,
+            default="Missing GDP/capita",
+        )
     else:
         df["gdp_group"] = "Missing GDP/capita"
 
@@ -553,6 +634,11 @@ available_metric_options = {
 if not available_metric_options:
     st.error("No usable numeric indicator columns were found.")
     st.stop()
+
+
+def metric_index(label):
+    labels = list(available_metric_options.keys())
+    return labels.index(label) if label in labels else 0
 
 
 # ============================================================
@@ -600,21 +686,15 @@ default_focus = next(
     all_countries[0],
 )
 
-# -------------------------------
-# Focus-country state setup
-# -------------------------------
-
 if "focus_country" not in st.session_state or st.session_state["focus_country"] not in all_countries:
     st.session_state["focus_country"] = default_focus
 
-# The dropdown must use a different key from the internal linked-selection variable.
-# This avoids the Streamlit error:
-# "st.session_state.focus_country cannot be modified after the widget with key focus_country is instantiated."
-if "focus_country_dropdown" not in st.session_state or st.session_state["focus_country_dropdown"] not in all_countries:
+if (
+    "focus_country_dropdown" not in st.session_state
+    or st.session_state["focus_country_dropdown"] not in all_countries
+):
     st.session_state["focus_country_dropdown"] = st.session_state["focus_country"]
 
-# Keep the dropdown visually synced with the current focus country.
-# This is safe because it happens BEFORE the dropdown widget is created.
 if st.session_state["focus_country_dropdown"] != st.session_state["focus_country"]:
     st.session_state["focus_country_dropdown"] = st.session_state["focus_country"]
 
@@ -628,7 +708,7 @@ st.sidebar.selectbox(
     options=all_countries,
     key="focus_country_dropdown",
     on_change=sync_focus_country_from_dropdown,
-    help="This country controls the generation-mix and access-over-time visuals. Clicking a country in a chart also updates this.",
+    help="This country controls the drill-down visuals. Clicking a country in a chart also updates this.",
 )
 
 focus_country = st.session_state["focus_country"]
@@ -642,7 +722,7 @@ countries_for_trend = st.sidebar.multiselect(
     "Countries for time-series comparison",
     options=all_countries,
     default=list(dict.fromkeys(default_compare)),
-    help="These countries appear in the trend chart.",
+    help="These countries appear in the trend chart. The focus country is always added automatically.",
 )
 
 if focus_country not in countries_for_trend:
@@ -652,7 +732,7 @@ country_scope = st.sidebar.multiselect(
     "Optional country filter for map, ranking, and scatter",
     options=all_countries,
     default=[],
-    help="Leave empty to show all countries. Select countries here if you want a narrower comparison.",
+    help="Leave empty to show all countries. The selected focus country is kept visible for context.",
 )
 
 gdp_group_order = [
@@ -674,10 +754,6 @@ selected_gdp_groups = st.sidebar.multiselect(
     default=available_gdp_groups,
     help="Applies to the snapshot visuals: map, ranking, and scatter.",
 )
-
-def metric_index(label):
-    labels = list(available_metric_options.keys())
-    return labels.index(label) if label in labels else 0
 
 map_metric_label = st.sidebar.selectbox(
     "Map metric",
@@ -709,8 +785,8 @@ st.sidebar.markdown(
     """
     <div class="small-note">
     <b>Linked interaction:</b><br>
-    Click a country in the map, ranking chart, scatter plot, or trend chart.
-    The focus country updates automatically, and the country-level visuals below change with it.
+    Click/select a country in the map, ranking chart, scatter plot, or trend chart.
+    The selected country is then highlighted or added across the dashboard.
     </div>
     """,
     unsafe_allow_html=True,
@@ -721,7 +797,9 @@ st.sidebar.markdown(
 # FILTER DATA
 # ============================================================
 
-snapshot_df = working_df[working_df["year"] == snapshot_year].copy()
+full_year_df = working_df[working_df["year"] == snapshot_year].copy()
+
+snapshot_df = full_year_df.copy()
 
 if selected_gdp_groups:
     snapshot_df = snapshot_df[snapshot_df["gdp_group"].isin(selected_gdp_groups)]
@@ -749,7 +827,7 @@ st.markdown(
 )
 
 st.caption(
-    "Design note: the dashboard uses filters, linked country selection, shared visual encodings, and focus-country drill-down views to support exploratory analysis."
+    "Design note: filters, linked country selection, consistent encodings, and focus-country drill-down views are used to support exploratory analysis."
 )
 
 
@@ -760,9 +838,21 @@ st.caption(
 st.subheader(f"Snapshot summary for {snapshot_year}")
 
 countries_with_data = snapshot_df["entity"].nunique()
-avg_electricity_access = snapshot_df["electricity_access_pct"].mean() if "electricity_access_pct" in snapshot_df.columns else np.nan
-avg_low_carbon = snapshot_df["low_carbon_electricity_pct"].mean() if "low_carbon_electricity_pct" in snapshot_df.columns else np.nan
-median_co2_person = snapshot_df["co2_person_tonnes"].median() if "co2_person_tonnes" in snapshot_df.columns else np.nan
+avg_electricity_access = (
+    snapshot_df["electricity_access_pct"].mean()
+    if "electricity_access_pct" in snapshot_df.columns
+    else np.nan
+)
+avg_low_carbon = (
+    snapshot_df["low_carbon_electricity_pct"].mean()
+    if "low_carbon_electricity_pct" in snapshot_df.columns
+    else np.nan
+)
+median_co2_person = (
+    snapshot_df["co2_person_tonnes"].median()
+    if "co2_person_tonnes" in snapshot_df.columns
+    else np.nan
+)
 
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
@@ -798,10 +888,14 @@ st.divider()
 
 
 # ============================================================
-# VISUAL 1: CHOROPLETH MAP
+# VISUAL 1 AND 2
 # ============================================================
 
 left_col, right_col = st.columns([1.1, 1])
+
+# ============================================================
+# VISUAL 1: MAP
+# ============================================================
 
 with left_col:
     st.markdown(
@@ -809,6 +903,12 @@ with left_col:
     )
 
     map_df = snapshot_df.dropna(subset=[map_metric_col]).copy()
+    map_df = append_focus_row(
+        map_df,
+        full_year_df,
+        focus_country,
+        required_cols=[map_metric_col],
+    )
 
     if map_df.empty:
         no_data_message("The selected map metric has no valid values for the current year and filters.")
@@ -824,6 +924,42 @@ with left_col:
             labels={map_metric_col: map_metric_label},
         )
 
+        fig_map.update_traces(
+            hovertemplate=(
+                "<b>%{customdata[0]}</b><br>"
+                f"{map_metric_label}: " + "%{customdata[1]:,.2f}<br>"
+                "GDP group: %{customdata[2]}<extra></extra>"
+            )
+        )
+
+        selected_geo = full_year_df[full_year_df["entity"] == focus_country].copy()
+
+        if (
+            not selected_geo.empty
+            and {"latitude", "longitude"}.issubset(selected_geo.columns)
+            and selected_geo["latitude"].notna().any()
+            and selected_geo["longitude"].notna().any()
+        ):
+            selected_row = selected_geo.iloc[0]
+
+            fig_map.add_trace(
+                go.Scattergeo(
+                    lon=[selected_row["longitude"]],
+                    lat=[selected_row["latitude"]],
+                    mode="markers+text",
+                    text=[focus_country],
+                    textposition="top center",
+                    marker=dict(
+                        size=13,
+                        color=SELECTED_COLOUR,
+                        line=dict(width=2, color="#111827"),
+                    ),
+                    customdata=[[focus_country]],
+                    hovertemplate=f"<b>{focus_country}</b><br>Selected focus country<extra></extra>",
+                    name="Selected country",
+                )
+            )
+
         fig_map.update_layout(
             height=470,
             margin=dict(l=0, r=0, t=20, b=0),
@@ -836,14 +972,7 @@ with left_col:
                 showcoastlines=False,
                 projection_type="natural earth",
             ),
-        )
-
-        fig_map.update_traces(
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                f"{map_metric_label}: " + "%{customdata[1]:,.2f}<br>"
-                "GDP group: %{customdata[2]}<extra></extra>"
-            )
+            showlegend=False,
         )
 
         map_event = plotly_selectable_chart(fig_map, key="map_chart")
@@ -855,43 +984,45 @@ with left_col:
 
 
 # ============================================================
-# VISUAL 2: RANKING BAR CHART
+# VISUAL 2: RANKING
 # ============================================================
 
 with right_col:
     st.markdown(
-        f"### 2. Top {top_n} countries: {ranking_metric_label} ({snapshot_year})"
+        f"### 2. Top {top_n} countries + selected country: {ranking_metric_label} ({snapshot_year})"
     )
 
-    ranking_df = (
-        snapshot_df.dropna(subset=[ranking_metric_col])
-        .sort_values(ranking_metric_col, ascending=False)
-        .head(top_n)
-        .sort_values(ranking_metric_col, ascending=True)
-        .copy()
+    ranking_df = prepare_ranking_data(
+        snapshot_df=snapshot_df,
+        full_year_df=full_year_df,
+        ranking_col=ranking_metric_col,
+        top_n=top_n,
+        focus_country=focus_country,
     )
 
     if ranking_df.empty:
         no_data_message("The ranking metric has no valid values for the current year and filters.")
     else:
-        fig_rank = px.bar(
-            ranking_df,
-            x=ranking_metric_col,
-            y="entity",
-            orientation="h",
-            custom_data=["entity", ranking_metric_col],
-            labels={
-                ranking_metric_col: ranking_metric_label,
-                "entity": "",
-            },
-        )
+        bar_colors = [
+            SELECTED_COLOUR if selected else BASE_BLUE
+            for selected in ranking_df["is_selected"]
+        ]
 
-        fig_rank.update_traces(
-            marker_color=OKABE_BLUE,
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                f"{ranking_metric_label}: " + "%{customdata[1]:,.2f}<extra></extra>"
-            ),
+        fig_rank = go.Figure()
+
+        fig_rank.add_trace(
+            go.Bar(
+                x=ranking_df[ranking_metric_col],
+                y=ranking_df["display_entity"],
+                orientation="h",
+                marker=dict(color=bar_colors),
+                customdata=ranking_df[["entity", ranking_metric_col]].to_numpy(),
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    f"{ranking_metric_label}: " + "%{customdata[1]:,.2f}<extra></extra>"
+                ),
+                name="Countries",
+            )
         )
 
         fig_rank.update_layout(
@@ -900,23 +1031,32 @@ with right_col:
             xaxis_title=ranking_metric_label,
             yaxis_title="",
             plot_bgcolor="white",
+            showlegend=False,
         )
+
+        fig_rank.update_xaxes(showgrid=True, gridcolor="#e5e7eb")
+        fig_rank.update_yaxes(showgrid=False)
 
         rank_event = plotly_selectable_chart(fig_rank, key="ranking_chart")
         update_focus_country(rank_event, "the ranking chart", valid_country_set)
 
     st.caption(
-        "Question answered: Which countries rank highest on the selected indicator in the chosen year?"
+        "Question answered: Which countries rank highest on the selected indicator, and where is the selected country?"
     )
 
 st.divider()
 
 
 # ============================================================
-# VISUAL 3: SCATTER PLOT
+# VISUAL 3 AND 4
 # ============================================================
 
 scatter_left, scatter_right = st.columns([1.1, 1])
+
+
+# ============================================================
+# VISUAL 3: SCATTER
+# ============================================================
 
 with scatter_left:
     st.markdown(
@@ -930,65 +1070,126 @@ with scatter_left:
     ]
 
     scatter_df = snapshot_df.dropna(subset=scatter_required).copy()
+    scatter_df = scatter_df[scatter_df["gdp_per_capita"] > 0].copy()
 
-    if "estimated_population_millions" not in scatter_df.columns:
-        scatter_df["estimated_population_millions"] = np.nan
+    scatter_df = append_focus_row(
+        scatter_df,
+        full_year_df,
+        focus_country,
+        required_cols=scatter_required,
+    )
 
-    if scatter_df["estimated_population_millions"].notna().sum() == 0:
-        scatter_df["bubble_size"] = 8
-    else:
-        median_pop = scatter_df["estimated_population_millions"].median()
-        scatter_df["bubble_size"] = scatter_df["estimated_population_millions"].fillna(median_pop)
-
-    scatter_df = scatter_df[scatter_df["gdp_per_capita"] > 0]
+    scatter_df = scatter_df[scatter_df["gdp_per_capita"] > 0].copy()
 
     if len(scatter_df) < 5:
         no_data_message(
             "The scatter plot needs GDP per capita, CO₂/person, and low-carbon electricity values."
         )
     else:
-        fig_scatter = px.scatter(
-            scatter_df,
-            x="gdp_per_capita",
-            y="co2_person_tonnes",
-            color="low_carbon_electricity_pct",
-            size="bubble_size",
-            hover_name="entity",
-            custom_data=[
-                "entity",
-                "gdp_per_capita",
-                "co2_person_tonnes",
-                "low_carbon_electricity_pct",
-            ],
-            color_continuous_scale="Blues",
-            size_max=24,
-            log_x=True,
-            labels={
-                "gdp_per_capita": "GDP per capita",
-                "co2_person_tonnes": "CO₂/person (tonnes)",
-                "low_carbon_electricity_pct": "Low-carbon electricity (%)",
-            },
+        if "estimated_population_millions" not in scatter_df.columns:
+            scatter_df["estimated_population_millions"] = np.nan
+
+        if scatter_df["estimated_population_millions"].notna().sum() == 0:
+            scatter_df["bubble_size"] = 10
+        else:
+            median_pop = scatter_df["estimated_population_millions"].median()
+            pop = scatter_df["estimated_population_millions"].fillna(median_pop).clip(lower=0)
+            scatter_df["bubble_size"] = np.clip(np.sqrt(pop) * 1.4, 6, 34)
+
+        scatter_df["is_selected"] = scatter_df["entity"] == focus_country
+
+        normal_scatter = scatter_df[~scatter_df["is_selected"]].copy()
+        selected_scatter = scatter_df[scatter_df["is_selected"]].copy()
+
+        fig_scatter = go.Figure()
+
+        fig_scatter.add_trace(
+            go.Scatter(
+                x=normal_scatter["gdp_per_capita"],
+                y=normal_scatter["co2_person_tonnes"],
+                mode="markers",
+                marker=dict(
+                    size=normal_scatter["bubble_size"],
+                    color=normal_scatter["low_carbon_electricity_pct"],
+                    colorscale="Blues",
+                    cmin=0,
+                    cmax=100,
+                    showscale=True,
+                    opacity=0.42,
+                    line=dict(width=0.6, color="white"),
+                    colorbar=dict(
+                        title="Low-carbon<br>electricity (%)",
+                        thickness=14,
+                    ),
+                ),
+                customdata=normal_scatter[
+                    [
+                        "entity",
+                        "gdp_per_capita",
+                        "co2_person_tonnes",
+                        "low_carbon_electricity_pct",
+                    ]
+                ].to_numpy(),
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "GDP/capita: %{customdata[1]:,.0f}<br>"
+                    "CO₂/person: %{customdata[2]:,.2f} tonnes<br>"
+                    "Low-carbon electricity: %{customdata[3]:,.1f}%<extra></extra>"
+                ),
+                name="Other countries",
+            )
+        )
+
+        if not selected_scatter.empty:
+            fig_scatter.add_trace(
+                go.Scatter(
+                    x=selected_scatter["gdp_per_capita"],
+                    y=selected_scatter["co2_person_tonnes"],
+                    mode="markers+text",
+                    text=selected_scatter["entity"],
+                    textposition="top center",
+                    marker=dict(
+                        size=np.maximum(selected_scatter["bubble_size"], 18),
+                        color=SELECTED_COLOUR,
+                        opacity=1,
+                        line=dict(width=2, color="#111827"),
+                    ),
+                    customdata=selected_scatter[
+                        [
+                            "entity",
+                            "gdp_per_capita",
+                            "co2_person_tonnes",
+                            "low_carbon_electricity_pct",
+                        ]
+                    ].to_numpy(),
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "GDP/capita: %{customdata[1]:,.0f}<br>"
+                        "CO₂/person: %{customdata[2]:,.2f} tonnes<br>"
+                        "Low-carbon electricity: %{customdata[3]:,.1f}%<extra></extra>"
+                    ),
+                    name="Selected country",
+                )
+            )
+
+        fig_scatter.update_xaxes(
+            type="log",
+            title="GDP per capita",
+            showgrid=True,
+            gridcolor="#e5e7eb",
+        )
+
+        fig_scatter.update_yaxes(
+            title="CO₂/person (tonnes)",
+            showgrid=True,
+            gridcolor="#e5e7eb",
         )
 
         fig_scatter.update_layout(
             height=500,
             margin=dict(l=10, r=20, t=20, b=45),
             plot_bgcolor="white",
-            coloraxis_colorbar=dict(
-                title="Low-carbon<br>electricity (%)",
-                thickness=14,
-            ),
-        )
-
-        fig_scatter.update_traces(
-            opacity=0.78,
-            marker=dict(line=dict(width=0.6, color="white")),
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                "GDP/capita: %{customdata[1]:,.0f}<br>"
-                "CO₂/person: %{customdata[2]:,.2f} tonnes<br>"
-                "Low-carbon electricity: %{customdata[3]:,.1f}%<extra></extra>"
-            ),
+            showlegend=False,
         )
 
         scatter_event = plotly_selectable_chart(fig_scatter, key="scatter_chart")
@@ -1000,7 +1201,7 @@ with scatter_left:
 
 
 # ============================================================
-# VISUAL 4: TIME-SERIES COMPARISON
+# VISUAL 4: TREND
 # ============================================================
 
 with scatter_right:
@@ -1008,35 +1209,71 @@ with scatter_right:
         f"### 4. Country trends over time: {time_metric_label}"
     )
 
+    trend_countries = list(dict.fromkeys([focus_country] + countries_for_trend))
+
     trend_df = working_df[
-        working_df["entity"].isin(countries_for_trend)
+        working_df["entity"].isin(trend_countries)
     ].dropna(subset=[time_metric_col]).copy()
 
     if trend_df.empty:
         no_data_message("The selected countries do not have enough values for the chosen time-series metric.")
     else:
-        fig_trend = px.line(
-            trend_df,
-            x="year",
-            y=time_metric_col,
-            color="entity",
-            markers=True,
-            custom_data=["entity", time_metric_col],
-            labels={
-                "year": "Year",
-                time_metric_col: time_metric_label,
-                "entity": "Country",
-            },
-            color_discrete_sequence=[
-                OKABE_BLUE,
-                OKABE_ORANGE,
-                OKABE_GREEN,
-                OKABE_PURPLE,
-                OKABE_GREY,
-                "#56B4E9",
-                "#D55E00",
-            ],
-        )
+        fig_trend = go.Figure()
+
+        palette = [
+            OKABE_BLUE,
+            OKABE_ORANGE,
+            OKABE_GREEN,
+            OKABE_PURPLE,
+            OKABE_GREY,
+            OKABE_SKY,
+            OKABE_RED_ORANGE,
+        ]
+
+        normal_colour_index = 0
+
+        for country in trend_countries:
+            country_df = trend_df[trend_df["entity"] == country].sort_values("year")
+
+            if country_df.empty:
+                continue
+
+            is_selected = country == focus_country
+
+            if is_selected:
+                line_colour = SELECTED_COLOUR
+                line_width = SELECTED_LINE_WIDTH
+                marker_size = 8
+                opacity = 1
+            else:
+                line_colour = palette[normal_colour_index % len(palette)]
+                normal_colour_index += 1
+                line_width = NORMAL_LINE_WIDTH
+                marker_size = 5
+                opacity = 0.72
+
+            fig_trend.add_trace(
+                go.Scatter(
+                    x=country_df["year"],
+                    y=country_df[time_metric_col],
+                    mode="lines+markers",
+                    name=country + (" ★" if is_selected else ""),
+                    line=dict(
+                        color=line_colour,
+                        width=line_width,
+                    ),
+                    marker=dict(
+                        size=marker_size,
+                    ),
+                    opacity=opacity,
+                    customdata=country_df[["entity", time_metric_col]].to_numpy(),
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "Year: %{x}<br>"
+                        f"{time_metric_label}: " + "%{customdata[1]:,.2f}<extra></extra>"
+                    ),
+                )
+            )
 
         fig_trend.add_vline(
             x=snapshot_year,
@@ -1046,15 +1283,6 @@ with scatter_right:
             annotation_position="top",
         )
 
-        for trace in fig_trend.data:
-            if trace.name == focus_country:
-                trace.line.width = 4
-                trace.marker.size = 8
-            else:
-                trace.line.width = 2
-                trace.marker.size = 6
-                trace.opacity = 0.72
-
         fig_trend.update_layout(
             height=500,
             margin=dict(l=10, r=20, t=20, b=45),
@@ -1062,12 +1290,16 @@ with scatter_right:
             legend_title_text="Country",
         )
 
-        fig_trend.update_traces(
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                "Year: %{x}<br>"
-                f"{time_metric_label}: " + "%{customdata[1]:,.2f}<extra></extra>"
-            )
+        fig_trend.update_xaxes(
+            title="Year",
+            showgrid=True,
+            gridcolor="#e5e7eb",
+        )
+
+        fig_trend.update_yaxes(
+            title=time_metric_label,
+            showgrid=True,
+            gridcolor="#e5e7eb",
         )
 
         trend_event = plotly_selectable_chart(fig_trend, key="trend_chart")
@@ -1087,7 +1319,6 @@ st.divider()
 st.subheader(f"Focus country drill-down: {focus_country}")
 
 focus_df = working_df[working_df["entity"] == focus_country].copy()
-
 focus_snapshot = focus_df[focus_df["year"] == snapshot_year].copy()
 
 focus_cols = st.columns(4)
@@ -1134,10 +1365,15 @@ else:
 
 
 # ============================================================
-# VISUAL 5: FOCUS COUNTRY ELECTRICITY MIX
+# VISUAL 5 AND 6
 # ============================================================
 
 mix_col, access_col = st.columns([1.1, 1])
+
+
+# ============================================================
+# VISUAL 5: ELECTRICITY MIX
+# ============================================================
 
 with mix_col:
     st.markdown(
@@ -1218,7 +1454,7 @@ with mix_col:
 
 
 # ============================================================
-# VISUAL 6: FOCUS COUNTRY ACCESS TREND
+# VISUAL 6: ACCESS TREND
 # ============================================================
 
 with access_col:
@@ -1322,7 +1558,7 @@ with coverage_col1:
 with coverage_col2:
     st.markdown(
         """
-        - Blank visuals are avoided by showing an explanatory message when data is missing.
+        - The selected country is highlighted in red or added to the visual when needed.
         - The map, ranking, scatter, and trend chart support linked country selection.
         - The dashboard should be interpreted as exploratory, not causal.
         - Missing values and unequal country coverage may affect comparisons.
