@@ -389,12 +389,26 @@ def extract_country_from_selection(event, valid_countries):
 
 
 def update_focus_country(event, source_name, valid_countries):
+    """
+    Linked-selection logic:
+    - If no country is selected and the user clicks a country, select it.
+    - If another country is selected and the user clicks a new country, switch to the new country.
+    - If the same selected country is clicked again, unselect it.
+    """
+
     clicked_country = extract_country_from_selection(event, valid_countries)
 
     if clicked_country and clicked_country in valid_countries:
         current_country = st.session_state.get("focus_country")
 
-        if clicked_country != current_country:
+        # Case 1: clicking the same selected country again clears the selection
+        if clicked_country == current_country:
+            st.session_state["focus_country"] = None
+            st.toast(f"{clicked_country} was unselected.")
+            st.rerun()
+
+        # Case 2: clicking a different country selects/switches focus
+        else:
             st.session_state["focus_country"] = clicked_country
             st.toast(f"Selected country changed to {clicked_country} from {source_name}.")
             st.rerun()
@@ -655,8 +669,10 @@ st.sidebar.title("Dashboard controls")
 st.sidebar.markdown(
     """
     <div class="small-note">
-    Use the filters to explore geography, time, country comparisons, and the relationship between
-    energy access, low-carbon electricity, emissions, GDP, and energy intensity.
+    <b>Linked interaction:</b><br>
+    Click/select a country in the map, ranking chart, scatter plot, or trend chart.
+    The selected country is highlighted in orange across the dashboard.
+    Click the same selected country again to clear the selection.
     </div>
     """,
     unsafe_allow_html=True,
