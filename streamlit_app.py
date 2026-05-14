@@ -85,7 +85,7 @@ st.markdown(
 # DESIGN CONSTANTS
 # ============================================================
 
-SELECTED_COLOUR = "#ff4b4b"
+SELECTED_COLOUR = "#E69F00"      # orange/amber highlight, colour-blind friendly
 BASE_BLUE = "#9ecae1"
 DARK_BLUE = "#0878b8"
 MUTED_BLUE = "rgba(158, 202, 225, 0.35)"
@@ -100,9 +100,6 @@ OKABE_RED_ORANGE = "#D55E00"
 
 SELECTED_LINE_WIDTH = 4
 NORMAL_LINE_WIDTH = 2
-
-DARK_TEXT = "#0f172a"
-MUTED_TEXT = "#64748b"
 
 PLOT_CONFIG = {
     "displayModeBar": False,
@@ -329,7 +326,6 @@ def no_data_message(message: str):
 def get_points_from_event(event):
     """
     Handles Streamlit's built-in Plotly selection event format.
-    This avoids the previous session_state error and supports linked selection.
     """
     if event is None:
         return []
@@ -393,7 +389,7 @@ def extract_country_from_selection(event, valid_countries):
 def update_focus_country(event, source_name, valid_countries):
     """
     Updates the shared focus country from chart selection.
-    Important: this modifies st.session_state['focus_country'], not the selectbox key.
+    Important: this modifies st.session_state['focus_country'], not the selectbox widget key.
     """
     clicked_country = extract_country_from_selection(event, valid_countries)
 
@@ -409,7 +405,6 @@ def update_focus_country(event, source_name, valid_countries):
 def plotly_selectable_chart(fig, key: str):
     """
     Uses Streamlit's built-in Plotly point selection.
-    Click/select a country, bar, point, or line point to update the dashboard.
     """
     fig.update_layout(clickmode="event+select")
 
@@ -439,10 +434,13 @@ def plotly_selectable_chart(fig, key: str):
 def append_focus_row(base_df, full_year_df, focus_country, required_cols=None):
     """
     Keeps the selected country visible even if it is outside the top-N ranking
-    or outside the main visual subset.
+    or outside the current filtered visual subset.
     """
     if required_cols is None:
         required_cols = []
+
+    if "entity" not in base_df.columns:
+        return base_df.copy()
 
     if focus_country in base_df["entity"].values:
         return base_df.copy()
@@ -467,7 +465,6 @@ def append_focus_row(base_df, full_year_df, focus_country, required_cols=None):
 def prepare_ranking_data(snapshot_df, full_year_df, ranking_col, top_n, focus_country):
     """
     Shows top N countries and appends the selected country if it is not already included.
-    This is why the ranking chart now changes when a map/scatter/trend country is clicked.
     """
     rank_df = snapshot_df[["entity", ranking_col]].dropna(subset=[ranking_col]).copy()
 
@@ -893,6 +890,7 @@ st.divider()
 
 left_col, right_col = st.columns([1.1, 1])
 
+
 # ============================================================
 # VISUAL 1: MAP
 # ============================================================
@@ -925,6 +923,8 @@ with left_col:
         )
 
         fig_map.update_traces(
+            marker_line_color="white",
+            marker_line_width=0.4,
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>"
                 f"{map_metric_label}: " + "%{customdata[1]:,.2f}<br>"
@@ -932,30 +932,34 @@ with left_col:
             )
         )
 
-        selected_geo = full_year_df[full_year_df["entity"] == focus_country].copy()
+        # Full-country selected highlight.
+        # IMPORTANT: no opacity property here because go.Choropleth does not support opacity.
+        selected_country_map = full_year_df[
+            (full_year_df["entity"] == focus_country) &
+            (full_year_df[map_metric_col].notna())
+        ].copy()
 
-        if (
-            not selected_geo.empty
-            and {"latitude", "longitude"}.issubset(selected_geo.columns)
-            and selected_geo["latitude"].notna().any()
-            and selected_geo["longitude"].notna().any()
-        ):
-            selected_row = selected_geo.iloc[0]
-
+        if not selected_country_map.empty:
             fig_map.add_trace(
-                go.Scattergeo(
-                    lon=[selected_row["longitude"]],
-                    lat=[selected_row["latitude"]],
-                    mode="markers+text",
-                    text=[focus_country],
-                    textposition="top center",
-                    marker=dict(
-                        size=13,
-                        color=SELECTED_COLOUR,
-                        line=dict(width=2, color="#111827"),
+                go.Choropleth(
+                    locations=selected_country_map["entity"],
+                    locationmode="country names",
+                    z=[1] * len(selected_country_map),
+                    colorscale=[
+                        [0, SELECTED_COLOUR],
+                        [1, SELECTED_COLOUR],
+                    ],
+                    showscale=False,
+                    marker_line_color="#111827",
+                    marker_line_width=1.8,
+                    customdata=selected_country_map[
+                        ["entity", map_metric_col, "gdp_group"]
+                    ].to_numpy(),
+                    hovertemplate=(
+                        "<b>%{customdata[0]} ★ selected</b><br>"
+                        f"{map_metric_label}: " + "%{customdata[1]:,.2f}<br>"
+                        "GDP group: %{customdata[2]}<extra></extra>"
                     ),
-                    customdata=[[focus_country]],
-                    hovertemplate=f"<b>{focus_country}</b><br>Selected focus country<extra></extra>",
                     name="Selected country",
                 )
             )
@@ -979,7 +983,7 @@ with left_col:
         update_focus_country(map_event, "the map", valid_country_set)
 
     st.caption(
-        "Question answered: Which countries stand out geographically for the selected sustainable-energy indicator?"
+        "Question answered: Which countries stand out geographically? The orange country is the selected focus country."
     )
 
 
@@ -1220,14 +1224,17 @@ with scatter_right:
     else:
         fig_trend = go.Figure()
 
+        # Normal comparison-line colours.
+        # Do NOT use orange/yellow here because orange is reserved for the selected focus country.
         palette = [
-            OKABE_BLUE,
-            OKABE_ORANGE,
-            OKABE_GREEN,
-            OKABE_PURPLE,
-            OKABE_GREY,
-            OKABE_SKY,
-            OKABE_RED_ORANGE,
+            OKABE_BLUE,      # blue
+            OKABE_GREEN,     # green
+            OKABE_PURPLE,    # purple
+            OKABE_GREY,      # grey
+            OKABE_SKY,       # sky blue
+            "#332288",       # dark indigo
+            "#44AA99",       # teal
+            "#882255",       # wine purple
         ]
 
         normal_colour_index = 0
@@ -1244,13 +1251,13 @@ with scatter_right:
                 line_colour = SELECTED_COLOUR
                 line_width = SELECTED_LINE_WIDTH
                 marker_size = 8
-                opacity = 1
+                opacity_value = 1
             else:
                 line_colour = palette[normal_colour_index % len(palette)]
                 normal_colour_index += 1
                 line_width = NORMAL_LINE_WIDTH
                 marker_size = 5
-                opacity = 0.72
+                opacity_value = 0.72
 
             fig_trend.add_trace(
                 go.Scatter(
@@ -1265,7 +1272,7 @@ with scatter_right:
                     marker=dict(
                         size=marker_size,
                     ),
-                    opacity=opacity,
+                    opacity=opacity_value,
                     customdata=country_df[["entity", time_metric_col]].to_numpy(),
                     hovertemplate=(
                         "<b>%{customdata[0]}</b><br>"
@@ -1558,7 +1565,7 @@ with coverage_col1:
 with coverage_col2:
     st.markdown(
         """
-        - The selected country is highlighted in red or added to the visual when needed.
+        - The selected country is highlighted in orange or added to the visual when needed.
         - The map, ranking, scatter, and trend chart support linked country selection.
         - The dashboard should be interpreted as exploratory, not causal.
         - Missing values and unequal country coverage may affect comparisons.
