@@ -87,7 +87,6 @@ st.markdown(
 
 SELECTED_COLOUR = "#E69F00"      # orange reserved only for selected country
 BASE_BLUE = "#9ecae1"
-DARK_BLUE = "#0878b8"
 
 OKABE_BLUE = "#0072B2"
 OKABE_GREEN = "#009E73"
@@ -956,32 +955,29 @@ else:
                 )
             )
 
-fig_map.update_layout(
-    height=720,
-    margin=dict(l=0, r=170, t=20, b=0),
-
-    coloraxis_colorbar=dict(
-        title=map_metric_label,
-        thickness=14,
-        len=0.62,
-        x=1.02,
-        xanchor="left",
-        y=0.50,
-        yanchor="middle",
-    ),
-
-    geo=dict(
-        domain=dict(
-            x=[0.00, 0.94],
-            y=[0.00, 1.00],
+    fig_map.update_layout(
+        height=720,
+        margin=dict(l=0, r=190, t=20, b=0),
+        coloraxis_colorbar=dict(
+            title=map_metric_label,
+            thickness=14,
+            len=0.62,
+            x=0.97,
+            xanchor="left",
+            y=0.50,
+            yanchor="middle",
         ),
-        showframe=False,
-        showcoastlines=False,
-        projection_type="natural earth",
-    ),
-
-    showlegend=False,
-)
+        geo=dict(
+            domain=dict(
+                x=[0.00, 0.91],
+                y=[0.00, 1.00],
+            ),
+            showframe=False,
+            showcoastlines=False,
+            projection_type="natural earth",
+        ),
+        showlegend=False,
+    )
 
     if enable_map_click_selection:
         map_event = plotly_selectable_chart(fig_map, key=map_key, config=MAP_CONFIG)
@@ -1295,9 +1291,9 @@ with trend_col:
 
 with profile_col:
     if focus_country is None:
-    st.markdown(f"### 5. Global median indicator profile ({snapshot_year})")
-else:
-    st.markdown(f"### 5. Selected country vs dashboard median ({snapshot_year})")
+        st.markdown(f"### 5. Global median indicator profile ({snapshot_year})")
+    else:
+        st.markdown(f"### 5. Selected country vs dashboard median ({snapshot_year})")
 
     profile_metrics = {
         "Electricity access": "electricity_access_pct",
@@ -1413,7 +1409,7 @@ else:
             fig_profile.update_yaxes(showgrid=False)
 
             fig_profile.update_traces(
-                hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x:,.1f}%<extra></extra>"
+                hovertemplate="<b>%{y}</b><br>%{x:,.1f}%<extra></extra>"
             )
 
             st.plotly_chart(fig_profile, use_container_width=True, config=PLOT_CONFIG)
