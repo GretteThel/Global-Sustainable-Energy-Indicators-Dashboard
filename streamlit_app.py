@@ -925,6 +925,10 @@ left_col, right_col = st.columns([1.1, 1])
 # VISUAL 1: MAP
 # ============================================================
 
+# ============================================================
+# VISUAL 1: MAP
+# ============================================================
+
 with left_col:
     st.markdown(
         f"### 1. Geographic pattern: {map_metric_label} ({snapshot_year})"
@@ -964,12 +968,15 @@ with left_col:
             )
         )
 
+        # Full-country selected highlight.
+        # Orange appears only when a country is selected.
         if focus_country is not None:
             selected_country_map = full_year_df[
                 full_year_df["entity"] == focus_country
             ].head(1).copy()
 
             if not selected_country_map.empty:
+                # 1. Country-shape highlight
                 fig_map.add_trace(
                     go.Choropleth(
                         locations=selected_country_map["entity"],
@@ -981,7 +988,7 @@ with left_col:
                         ],
                         showscale=False,
                         marker_line_color="#111827",
-                        marker_line_width=2.0,
+                        marker_line_width=2.2,
                         customdata=selected_country_map[
                             ["entity", map_metric_col, "gdp_group"]
                         ].to_numpy(),
@@ -994,6 +1001,45 @@ with left_col:
                     )
                 )
 
+                # 2. Locator marker for small countries
+                # This helps countries like Guinea-Bissau, Lebanon, Rwanda, etc.
+                if {"latitude", "longitude"}.issubset(selected_country_map.columns):
+                    selected_country_marker = selected_country_map.dropna(
+                        subset=["latitude", "longitude"]
+                    )
+
+                    if not selected_country_marker.empty:
+                        fig_map.add_trace(
+                            go.Scattergeo(
+                                lon=selected_country_marker["longitude"],
+                                lat=selected_country_marker["latitude"],
+                                mode="markers+text",
+                                text=selected_country_marker["entity"],
+                                textposition="top center",
+                                marker=dict(
+                                    size=10,
+                                    color=SELECTED_COLOUR,
+                                    line=dict(
+                                        width=2,
+                                        color="#111827"
+                                    ),
+                                ),
+                                textfont=dict(
+                                    size=11,
+                                    color="#111827"
+                                ),
+                                customdata=selected_country_marker[
+                                    ["entity", map_metric_col, "gdp_group"]
+                                ].to_numpy(),
+                                hovertemplate=(
+                                    "<b>%{customdata[0]} ★ selected</b><br>"
+                                    f"{map_metric_label}: " + "%{customdata[1]:,.2f}<br>"
+                                    "GDP group: %{customdata[2]}<extra></extra>"
+                                ),
+                                name="Selected locator",
+                            )
+                        )
+
         fig_map.update_layout(
             height=470,
             margin=dict(l=0, r=0, t=20, b=0),
@@ -1004,6 +1050,10 @@ with left_col:
             geo=dict(
                 showframe=False,
                 showcoastlines=False,
+                showland=True,
+                landcolor="#f8fafc",
+                showcountries=True,
+                countrycolor="#cbd5e1",
                 projection_type="natural earth",
             ),
             showlegend=False,
@@ -1014,14 +1064,13 @@ with left_col:
 
     if focus_country:
         st.caption(
-            "Question answered: Which countries stand out geographically? The orange country is the selected focus country."
+            "Question answered: Which countries stand out geographically? Orange marks the selected country; a locator marker is added for small countries."
         )
     else:
         st.caption(
             "Question answered: Which countries stand out geographically? No country is selected yet."
         )
-
-
+        
 # ============================================================
 # VISUAL 2: RANKING
 # ============================================================
