@@ -388,13 +388,22 @@ def extract_country_from_selection(event, valid_countries: set[str]) -> str | No
 
 
 def update_focus_country(event, source_name: str, valid_countries: set[str]):
-    """Update focus country when the user clicks/selects a country in a visual."""
+    """
+    Updates the internal focus country when a country is clicked in a visual.
+
+    Important:
+    We update st.session_state["focus_country"], NOT the dropdown widget key.
+    The dropdown widget key is "focus_country_dropdown".
+    """
     clicked_country = extract_country_from_selection(event, valid_countries)
 
-    if clicked_country and clicked_country != st.session_state.get("focus_country"):
-        st.session_state["focus_country"] = clicked_country
-        st.toast(f"Focus country changed to {clicked_country} from {source_name}.")
-        st.rerun()
+    if clicked_country and clicked_country in valid_countries:
+        current_country = st.session_state.get("focus_country")
+
+        if clicked_country != current_country:
+            st.session_state["focus_country"] = clicked_country
+            st.toast(f"Focus country changed to {clicked_country} from {source_name}.")
+            st.rerun()
 
 
 def no_data_message(message: str):
@@ -591,13 +600,34 @@ default_focus = next(
     all_countries[0],
 )
 
+# -------------------------------
+# Focus-country state setup
+# -------------------------------
+
 if "focus_country" not in st.session_state or st.session_state["focus_country"] not in all_countries:
     st.session_state["focus_country"] = default_focus
+
+# The dropdown must use a different key from the internal linked-selection variable.
+# This avoids the Streamlit error:
+# "st.session_state.focus_country cannot be modified after the widget with key focus_country is instantiated."
+if "focus_country_dropdown" not in st.session_state or st.session_state["focus_country_dropdown"] not in all_countries:
+    st.session_state["focus_country_dropdown"] = st.session_state["focus_country"]
+
+# Keep the dropdown visually synced with the current focus country.
+# This is safe because it happens BEFORE the dropdown widget is created.
+if st.session_state["focus_country_dropdown"] != st.session_state["focus_country"]:
+    st.session_state["focus_country_dropdown"] = st.session_state["focus_country"]
+
+
+def sync_focus_country_from_dropdown():
+    st.session_state["focus_country"] = st.session_state["focus_country_dropdown"]
+
 
 st.sidebar.selectbox(
     "Focus country for drill-down",
     options=all_countries,
-    key="focus_country",
+    key="focus_country_dropdown",
+    on_change=sync_focus_country_from_dropdown,
     help="This country controls the generation-mix and access-over-time visuals. Clicking a country in a chart also updates this.",
 )
 
