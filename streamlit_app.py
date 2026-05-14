@@ -925,27 +925,31 @@ left_col, right_col = st.columns([1.1, 1])
 # VISUAL 1: MAP
 # ============================================================
 
-# ============================================================
-# VISUAL 1: MAP
-# ============================================================
-
 with left_col:
-    st.markdown(
-        f"### 1. Geographic pattern: {map_metric_label} ({snapshot_year})"
-    )
-
-    map_df = snapshot_df.dropna(subset=[map_metric_col]).copy()
-
-    if focus_country is not None:
-        map_df = append_focus_row(
-            map_df,
-            full_year_df,
-            focus_country,
-            required_cols=[],
+    if focus_country:
+        st.markdown(
+            f"### 1. Selected country map: {focus_country} ({snapshot_year})"
+        )
+    else:
+        st.markdown(
+            f"### 1. Geographic pattern: {map_metric_label} ({snapshot_year})"
         )
 
+    # ------------------------------------------------------------
+    # If no country is selected, show the global map.
+    # If a country is selected, focus only on that country.
+    # ------------------------------------------------------------
+
+    if focus_country:
+        map_df = full_year_df[full_year_df["entity"] == focus_country].copy()
+    else:
+        map_df = snapshot_df.dropna(subset=[map_metric_col]).copy()
+
     if map_df.empty:
-        no_data_message("The selected map metric has no valid values for the current year and filters.")
+        no_data_message(
+            "The selected map metric has no valid values for the current year and filters."
+        )
+
     else:
         fig_map = px.choropleth(
             map_df,
@@ -954,121 +958,73 @@ with left_col:
             color=map_metric_col,
             hover_name="entity",
             custom_data=["entity", map_metric_col, "gdp_group"],
-            color_continuous_scale="Blues",
+            color_continuous_scale="Blues" if not focus_country else [[0, SELECTED_COLOUR], [1, SELECTED_COLOUR]],
             labels={map_metric_col: map_metric_label},
         )
 
         fig_map.update_traces(
-            marker_line_color="white",
-            marker_line_width=0.4,
+            marker_line_color="#111827" if focus_country else "white",
+            marker_line_width=2.2 if focus_country else 0.4,
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>"
                 f"{map_metric_label}: " + "%{customdata[1]:,.2f}<br>"
                 "GDP group: %{customdata[2]}<extra></extra>"
+            ),
+        )
+
+        # ------------------------------------------------------------
+        # Map layout
+        # If selected, zoom to selected country.
+        # If not selected, show global context.
+        # ------------------------------------------------------------
+
+        if focus_country:
+            fig_map.update_layout(
+                height=470,
+                margin=dict(l=0, r=0, t=20, b=0),
+                geo=dict(
+                    showframe=False,
+                    showcoastlines=True,
+                    showcountries=True,
+                    countrycolor="#cbd5e1",
+                    coastlinecolor="#cbd5e1",
+                    showland=True,
+                    landcolor="#f8fafc",
+                    fitbounds="locations",
+                    visible=True,
+                ),
+                showlegend=False,
+                coloraxis_showscale=False,
             )
-        )
 
-        # Full-country selected highlight.
-        # Orange appears only when a country is selected.
-        if focus_country is not None:
-            selected_country_map = full_year_df[
-                full_year_df["entity"] == focus_country
-            ].head(1).copy()
-
-            if not selected_country_map.empty:
-                # 1. Country-shape highlight
-                fig_map.add_trace(
-                    go.Choropleth(
-                        locations=selected_country_map["entity"],
-                        locationmode="country names",
-                        z=[1] * len(selected_country_map),
-                        colorscale=[
-                            [0, SELECTED_COLOUR],
-                            [1, SELECTED_COLOUR],
-                        ],
-                        showscale=False,
-                        marker_line_color="#111827",
-                        marker_line_width=2.2,
-                        customdata=selected_country_map[
-                            ["entity", map_metric_col, "gdp_group"]
-                        ].to_numpy(),
-                        hovertemplate=(
-                            "<b>%{customdata[0]} ★ selected</b><br>"
-                            f"{map_metric_label}: " + "%{customdata[1]:,.2f}<br>"
-                            "GDP group: %{customdata[2]}<extra></extra>"
-                        ),
-                        name="Selected country",
-                    )
-                )
-
-                # 2. Locator marker for small countries
-                # This helps countries like Guinea-Bissau, Lebanon, Rwanda, etc.
-                if {"latitude", "longitude"}.issubset(selected_country_map.columns):
-                    selected_country_marker = selected_country_map.dropna(
-                        subset=["latitude", "longitude"]
-                    )
-
-                    if not selected_country_marker.empty:
-                        fig_map.add_trace(
-                            go.Scattergeo(
-                                lon=selected_country_marker["longitude"],
-                                lat=selected_country_marker["latitude"],
-                                mode="markers+text",
-                                text=selected_country_marker["entity"],
-                                textposition="top center",
-                                marker=dict(
-                                    size=10,
-                                    color=SELECTED_COLOUR,
-                                    line=dict(
-                                        width=2,
-                                        color="#111827"
-                                    ),
-                                ),
-                                textfont=dict(
-                                    size=11,
-                                    color="#111827"
-                                ),
-                                customdata=selected_country_marker[
-                                    ["entity", map_metric_col, "gdp_group"]
-                                ].to_numpy(),
-                                hovertemplate=(
-                                    "<b>%{customdata[0]} ★ selected</b><br>"
-                                    f"{map_metric_label}: " + "%{customdata[1]:,.2f}<br>"
-                                    "GDP group: %{customdata[2]}<extra></extra>"
-                                ),
-                                name="Selected locator",
-                            )
-                        )
-
-        fig_map.update_layout(
-            height=470,
-            margin=dict(l=0, r=0, t=20, b=0),
-            coloraxis_colorbar=dict(
-                title=map_metric_label,
-                thickness=14,
-            ),
-            geo=dict(
-                showframe=False,
-                showcoastlines=False,
-                showland=True,
-                landcolor="#f8fafc",
-                showcountries=True,
-                countrycolor="#cbd5e1",
-                projection_type="natural earth",
-            ),
-            showlegend=False,
-        )
+        else:
+            fig_map.update_layout(
+                height=470,
+                margin=dict(l=0, r=0, t=20, b=0),
+                coloraxis_colorbar=dict(
+                    title=map_metric_label,
+                    thickness=14,
+                ),
+                geo=dict(
+                    showframe=False,
+                    showcoastlines=False,
+                    showcountries=True,
+                    countrycolor="#cbd5e1",
+                    projection_type="natural earth",
+                ),
+                showlegend=False,
+            )
 
         map_event = plotly_selectable_chart(fig_map, key=map_key)
         update_focus_country(map_event, "the map", valid_country_set)
 
     if focus_country:
         st.caption(
-            "Question answered: Which countries stand out geographically? Orange marks the selected country; a locator marker is added for small countries."
+            "Question answered: Where is the selected country located? The map zooms to the selected country for clearer focus. Click it again to clear the selection."
         )
     else:
         st.caption(
-            "Question answered: Which countries stand out geographically? No country is selected yet."
+            "Question answered: Which countries stand out geographically? Click a country to focus on it."
         )
         
 # ============================================================
