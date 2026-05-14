@@ -803,7 +803,7 @@ top_n = st.sidebar.slider(
 
 enable_map_click_selection = st.sidebar.checkbox(
     "Enable map click selection",
-    value=False,
+    value=True,
     help=(
         "Keep this off when you want to pan and zoom the map without accidentally "
         "changing the selected country. You can still select countries from the ranking, "
