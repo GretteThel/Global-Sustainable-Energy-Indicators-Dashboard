@@ -1178,7 +1178,7 @@ with scatter_left:
                     cmax=100,
                     showscale=True,
                     opacity=0.42,
-                    line=dict(width=0.6, color="white"),
+                    line=dict(width=0.8, color="white"),
                     colorbar=dict(
                         title="Low-carbon<br>electricity (%)",
                         thickness=14,
@@ -1265,25 +1265,16 @@ with scatter_left:
 # ============================================================
 # VISUAL 4: TREND
 # ============================================================
-
 with scatter_right:
     st.markdown(
         f"### 4. Country trends over time: {time_metric_label}"
     )
 
-    if countries_for_trend:
-        trend_countries = countries_for_trend.copy()
+    # If a focus country is selected, keep it first.
+    if focus_country:
+        trend_countries = list(dict.fromkeys([focus_country] + countries_for_trend))
     else:
-        trend_countries = get_default_trend_countries(
-            full_year_df=full_year_df,
-            metric_col=time_metric_col,
-            n=5,
-        )
-
-    if has_focus and focus_country not in trend_countries:
-        trend_countries = [focus_country] + trend_countries
-
-    trend_countries = list(dict.fromkeys(trend_countries))
+        trend_countries = countries_for_trend.copy()
 
     trend_df = working_df[
         working_df["entity"].isin(trend_countries)
@@ -1294,53 +1285,89 @@ with scatter_right:
     else:
         fig_trend = go.Figure()
 
-        # No orange/yellow in the normal palette because orange is reserved for selected country.
+        # More distinct colours (avoids near-identical blues)
         palette = [
-            OKABE_BLUE,
-            OKABE_GREEN,
-            OKABE_PURPLE,
-            OKABE_GREY,
-            OKABE_SKY,
-            OKABE_RED_ORANGE,
-            OKABE_INDIGO,
-            OKABE_TEAL,
-            OKABE_WINE,
+            "#0072B2",  # blue
+            "#009E73",  # green
+            "#CC79A7",  # purple/pink
+            "#D55E00",  # reddish orange
+            "#56B4E9",  # sky blue
+            "#000000",  # black
+            "#8C564B",  # brown
+            "#9467BD",  # violet
+            "#17BECF",  # cyan
+            "#2CA02C",  # strong green
+        ]
+
+        # Different dash styles to help overlapping lines
+        dash_styles = [
+            "solid",
+            "dash",
+            "dot",
+            "dashdot",
+            "longdash",
+            "longdashdot",
+        ]
+
+        # Different marker symbols to help overlapping points
+        marker_symbols = [
+            "circle",
+            "square",
+            "diamond",
+            "triangle-up",
+            "x",
+            "cross",
+            "star",
+            "triangle-down",
+            "pentagon",
+            "hexagon",
         ]
 
         normal_colour_index = 0
 
-        for country in trend_countries:
+        for i, country in enumerate(trend_countries):
             country_df = trend_df[trend_df["entity"] == country].sort_values("year")
 
             if country_df.empty:
                 continue
 
-            is_selected = has_focus and country == focus_country
+            is_selected = (focus_country is not None) and (country == focus_country)
 
             if is_selected:
                 line_colour = SELECTED_COLOUR
-                line_width = SELECTED_LINE_WIDTH
+                line_width = 4
                 marker_size = 8
                 opacity_value = 1
+                dash_style = "solid"
+                marker_symbol = "circle"
+                trace_name = country + " ★"
             else:
                 line_colour = palette[normal_colour_index % len(palette)]
+                dash_style = dash_styles[normal_colour_index % len(dash_styles)]
+                marker_symbol = marker_symbols[normal_colour_index % len(marker_symbols)]
                 normal_colour_index += 1
-                line_width = NORMAL_LINE_WIDTH
-                marker_size = 5
-                opacity_value = 0.72
+
+                line_width = 2.5
+                marker_size = 7
+                opacity_value = 0.95
+                trace_name = country
 
             fig_trend.add_trace(
                 go.Scatter(
                     x=country_df["year"],
                     y=country_df[time_metric_col],
                     mode="lines+markers",
-                    name=country + (" ★" if is_selected else ""),
+                    name=trace_name,
                     line=dict(
                         color=line_colour,
                         width=line_width,
+                        dash=dash_style,
                     ),
                     marker=dict(
                         size=marker_size,
+                        symbol=marker_symbol,
+                        line=dict(width=0.8, color="white"),
+                        color=line_colour,
                     ),
                     opacity=opacity_value,
                     customdata=country_df[["entity", time_metric_col]].to_numpy(),
@@ -1382,9 +1409,9 @@ with scatter_right:
         trend_event = plotly_selectable_chart(fig_trend, key="trend_chart")
         update_focus_country(trend_event, "the trend chart", valid_country_set)
 
-    if has_focus:
+    if focus_country:
         st.caption(
-            "Question answered: How has the selected indicator changed over time for comparison countries? Orange marks the selected focus country."
+            "Question answered: How has the selected indicator changed over time for the selected country and comparison countries?"
         )
     else:
         st.caption(
