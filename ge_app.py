@@ -33,7 +33,7 @@ st.markdown(
             padding-bottom: 2rem;
             padding-left: 1.5rem;
             padding-right: 1.5rem;
-            max-width: 1800px !important;
+            max-width: 80% !important;
         }
 
         h1, h2, h3 {
