@@ -46,6 +46,14 @@ st.markdown(
             line-height: 1.35;
         }
 
+        .chart-note {
+            color: #64748b;
+            font-size: 0.86rem;
+            line-height: 1.35;
+            margin-top: -0.2rem;
+            margin-bottom: 0.8rem;
+        }
+
         .kpi-card {
             background: #f8fafc;
             border: 1px solid #e2e8f0;
@@ -79,18 +87,36 @@ st.markdown(
         }
 
         section[data-testid="stSidebar"] {
-            width: 285px !important;
-            min-width: 285px !important;
+            width: 300px !important;
+            min-width: 300px !important;
         }
 
         section[data-testid="stSidebar"] > div {
-            width: 285px !important;
-            min-width: 285px !important;
+            width: 300px !important;
+            min-width: 300px !important;
         }
 
         div[data-testid="stSidebarContent"] {
-            padding-left: 0.7rem;
-            padding-right: 0.7rem;
+            padding-left: 0.8rem;
+            padding-right: 0.8rem;
+        }
+
+        div[data-testid="stSidebar"] .stSelectbox,
+        div[data-testid="stSidebar"] .stMultiSelect,
+        div[data-testid="stSidebar"] .stSlider,
+        div[data-testid="stSidebar"] .stCheckbox,
+        div[data-testid="stSidebar"] .stButton {
+            margin-bottom: 1.05rem;
+        }
+
+        div[data-testid="stSidebar"] label {
+            margin-bottom: 0.35rem;
+            font-weight: 600;
+        }
+
+        div[data-testid="stSidebar"] hr {
+            margin-top: 1.2rem;
+            margin-bottom: 1.2rem;
         }
     </style>
     """,
@@ -741,7 +767,7 @@ st.sidebar.selectbox(
     key="focus_country_dropdown",
     placeholder="Choose a country",
     on_change=sync_focus_country_from_dropdown,
-    help="Choose a country manually, or click a country in the map, ranking, scatter, or trend chart.",
+    help="Choose a country manually, or click a country in the map, ranking, scatter, trend, or generation-mix chart.",
 )
 
 st.sidebar.button(
@@ -824,9 +850,9 @@ st.sidebar.markdown(
     """
     <div class="small-note">
     <b>Linked interaction:</b><br>
-    Click/select a country in the ranking chart, scatter plot, trend chart, or map if enabled.
-    The selected country is highlighted in orange across the dashboard.
-    Click the same selected country again to clear the selection.
+    Click/select a country in the ranking chart, scatter plot, trend chart, generation-mix chart,
+    or map if enabled. The selected country is highlighted in orange where colour is not already
+    encoding another variable. Click the same selected country again to clear the selection.
     </div>
     """,
     unsafe_allow_html=True,
@@ -853,10 +879,10 @@ ranking_metric_col = available_metric_options[ranking_metric_label]
 
 focus_key = normalise_name(focus_country if focus_country else "none")
 map_key = f"map_chart_{focus_key}_{snapshot_year}_{normalise_name(map_metric_label)}_{enable_map_click_selection}"
-rank_key = f"ranking_chart_{focus_key}_{snapshot_year}_{normalise_name(ranking_metric_label)}"
+rank_key = f"ranking_chart_{focus_key}_{snapshot_year}_{normalise_name(ranking_metric_label)}_{top_n}"
 scatter_key = f"scatter_chart_{focus_key}_{snapshot_year}"
 trend_key = f"trend_chart_{focus_key}_{snapshot_year}_{normalise_name(time_metric_label)}"
-generation_mix_key = f"generation_mix_{focus_key}_{snapshot_year}"
+generation_mix_key = f"generation_mix_{focus_key}_{snapshot_year}_{top_n}"
 
 
 # ============================================================
@@ -999,33 +1025,30 @@ else:
                     name="Selected country",
                 )
             )
-            
-    fig_map.update_layout(
-        height=760,
-        margin=dict(l=0, r=25, t=10, b=0),
 
+    fig_map.update_layout(
+        height=780,
+        margin=dict(l=0, r=15, t=10, b=0),
         coloraxis_colorbar=dict(
             title=map_metric_label,
             thickness=12,
             len=0.50,
-            x=0.985,
+            x=0.975,
             xanchor="left",
             y=0.50,
             yanchor="middle",
         ),
-
         geo=dict(
             domain=dict(
-                x=[0.00, 0.965],
+                x=[0.00, 0.955],
                 y=[0.00, 1.00],
             ),
             showframe=False,
             showcoastlines=False,
             projection_type="natural earth",
-            projection_scale=1.12,
-            center=dict(lat=10, lon=5),
+            projection_scale=1.16,
+            center=dict(lat=8, lon=5),
         ),
-
         showlegend=False,
     )
 
@@ -1041,7 +1064,7 @@ if focus_country:
     )
 else:
     st.caption(
-        "Question answered: Which countries stand out geographically? No country is selected yet. Use the ranking, scatter, trend chart, sidebar, or enable map click selection."
+        "Question answered: Which countries stand out geographically? No country is selected yet. Use the ranking, scatter, trend chart, generation-mix chart, sidebar, or enable map click selection."
     )
 
 st.divider()
@@ -1097,7 +1120,7 @@ with rank_col:
         )
 
         fig_rank.update_layout(
-            height=520,
+            height=540,
             margin=dict(l=10, r=20, t=20, b=45),
             xaxis_title=ranking_metric_label,
             yaxis_title="",
@@ -1252,7 +1275,7 @@ with scatter_col:
         )
 
         fig_scatter.update_layout(
-            height=520,
+            height=540,
             margin=dict(l=10, r=20, t=20, b=45),
             plot_bgcolor="white",
             showlegend=False,
@@ -1282,7 +1305,31 @@ trend_col, generation_mix_col = st.columns([1, 1])
 # ============================================================
 
 with trend_col:
-    st.markdown(f"### 4. Country trends over time: {time_metric_label}")
+    if focus_country:
+        st.markdown(
+            f"### 4. Selected country trend vs comparison countries: {time_metric_label}"
+        )
+        st.markdown(
+            """
+            <div class="chart-note">
+            Orange line = selected country. Other lines show comparison countries from the sidebar,
+            or representative countries when no manual comparison set is chosen.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"### 4. Comparison-country trends: {time_metric_label}"
+        )
+        st.markdown(
+            """
+            <div class="chart-note">
+            No country is selected. Lines show representative countries across the selected indicator range.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     if countries_for_trend:
         trend_countries = countries_for_trend.copy()
@@ -1382,7 +1429,7 @@ with trend_col:
         )
 
         fig_trend.update_layout(
-            height=520,
+            height=540,
             margin=dict(l=10, r=20, t=20, b=45),
             plot_bgcolor="white",
             legend_title_text="Country",
@@ -1418,10 +1465,33 @@ with trend_col:
 # ============================================================
 
 with generation_mix_col:
-    title_selected = " + selected country" if focus_country else ""
-    st.markdown(
-        f"### 5. Electricity generation mix{title_selected} ({snapshot_year})"
-    )
+    if focus_country:
+        st.markdown(
+            f"### 5. Top electricity producers + selected country: generation mix ({snapshot_year})"
+        )
+        st.markdown(
+            """
+            <div class="chart-note">
+            Rows show the largest electricity producers in the selected year.
+            The selected country is added with ★ if it is not already in the top group.
+            Colour encodes electricity source, so the selected country is marked by label rather than colour.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"### 5. Top electricity producers: generation mix ({snapshot_year})"
+        )
+        st.markdown(
+            """
+            <div class="chart-note">
+            Rows show countries with the largest total electricity generation in the selected year.
+            Bar segments show the percentage split between fossil fuels, nuclear, and renewables.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     generation_cols = [
         "electricity_fossil_twh",
@@ -1547,7 +1617,7 @@ with generation_mix_col:
         )
 
         fig_generation_mix.update_layout(
-            height=520,
+            height=540,
             margin=dict(l=10, r=20, t=20, b=45),
             plot_bgcolor="white",
             barmode="stack",
@@ -1588,9 +1658,14 @@ with generation_mix_col:
             valid_country_set,
         )
 
-    st.caption(
-        "Question answered: How is electricity generation split between fossil fuels, nuclear, and renewables for major electricity producers and the selected country?"
-    )
+    if focus_country:
+        st.caption(
+            "Question answered: How does the selected country’s electricity-generation mix compare with major electricity producers? The ★ marks the selected country; colours show energy source."
+        )
+    else:
+        st.caption(
+            "Question answered: How is electricity generation split between fossil fuels, nuclear, and renewables among the largest electricity producers?"
+        )
 
 st.divider()
 
@@ -1836,7 +1911,9 @@ with coverage_col2:
         f"""
         - The large map provides the geographic overview.
         - Map click selection is currently **{"enabled" if enable_map_click_selection else "disabled"}**.
-        - Orange is reserved for the selected country only.
+        - Orange is used only for selected-country highlighting where colour is not already encoding another variable.
+        - In the generation-mix chart, colour encodes electricity source, so the selected country is marked with **★** instead.
+        - The generation-mix chart shows the largest electricity producers for the selected year, with the selected country appended when relevant.
         - Click the selected country again to clear the selection.
         - Ranking, scatter, trend, and generation-mix charts support linked country selection.
         - The dashboard should be interpreted as exploratory, not causal.
