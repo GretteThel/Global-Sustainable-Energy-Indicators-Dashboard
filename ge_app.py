@@ -31,9 +31,9 @@ st.markdown(
         .block-container {
             padding-top: 1.5rem;
             padding-bottom: 2rem;
-            padding-left: 1rem;
-            padding-right: 1rem;
-            max-width: 100% !important;
+            padding-left: 1.5rem;
+            padding-right: 1.5rem;
+            max-width: 1800px !important;
         }
 
         h1, h2, h3 {
@@ -1027,28 +1027,31 @@ else:
             )
 
     fig_map.update_layout(
-        height=780,
-        margin=dict(l=0, r=15, t=10, b=0),
+        height=680,
+        margin=dict(l=0, r=80, t=10, b=0),
+    
         coloraxis_colorbar=dict(
             title=map_metric_label,
-            thickness=12,
-            len=0.50,
-            x=0.975,
+            thickness=14,
+            len=0.58,
+            x=0.93,
             xanchor="left",
             y=0.50,
             yanchor="middle",
         ),
+    
         geo=dict(
             domain=dict(
-                x=[0.00, 0.955],
+                x=[0.00, 0.90],
                 y=[0.00, 1.00],
             ),
             showframe=False,
             showcoastlines=False,
             projection_type="natural earth",
-            projection_scale=1.16,
+            projection_scale=1.35,
             center=dict(lat=8, lon=5),
         ),
+    
         showlegend=False,
     )
 
