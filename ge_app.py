@@ -31,9 +31,9 @@ st.markdown(
         .block-container {
             padding-top: 1.5rem;
             padding-bottom: 2rem;
-            padding-left: 1.5rem;
-            padding-right: 1.5rem;
-            max-width: 4500px !important;
+            padding-left: 1rem;
+            padding-right: 1rem;
+            max-width: 100% !important;
         }
 
         h1, h2, h3 {
@@ -50,8 +50,8 @@ st.markdown(
             color: #64748b;
             font-size: 0.86rem;
             line-height: 1.35;
-            margin-top: -0.2rem;
-            margin-bottom: 0.8rem;
+            margin-top: -0.3rem;
+            margin-bottom: 0.7rem;
         }
 
         .kpi-card {
@@ -87,36 +87,18 @@ st.markdown(
         }
 
         section[data-testid="stSidebar"] {
-            width: 300px !important;
-            min-width: 300px !important;
+            width: 285px !important;
+            min-width: 285px !important;
         }
 
         section[data-testid="stSidebar"] > div {
-            width: 300px !important;
-            min-width: 300px !important;
+            width: 285px !important;
+            min-width: 285px !important;
         }
 
         div[data-testid="stSidebarContent"] {
-            padding-left: 0.8rem;
-            padding-right: 0.8rem;
-        }
-
-        div[data-testid="stSidebar"] .stSelectbox,
-        div[data-testid="stSidebar"] .stMultiSelect,
-        div[data-testid="stSidebar"] .stSlider,
-        div[data-testid="stSidebar"] .stCheckbox,
-        div[data-testid="stSidebar"] .stButton {
-            margin-bottom: 1.05rem;
-        }
-
-        div[data-testid="stSidebar"] label {
-            margin-bottom: 0.35rem;
-            font-weight: 600;
-        }
-
-        div[data-testid="stSidebar"] hr {
-            margin-top: 1.2rem;
-            margin-bottom: 1.2rem;
+            padding-left: 0.7rem;
+            padding-right: 0.7rem;
         }
     </style>
     """,
@@ -432,6 +414,7 @@ def update_focus_country(event, source_name, valid_countries):
             st.rerun()
         else:
             st.session_state["focus_country"] = clicked_country
+            st.session_state["focus_country_dropdown"] = clicked_country
             st.toast(f"Selected country changed to {clicked_country} from {source_name}.")
             st.rerun()
 
@@ -735,7 +718,7 @@ snapshot_year = st.sidebar.slider(
     min_value=min_year,
     max_value=max_year,
     value=default_year,
-    help="This year controls the map, ranking chart, scatter plot, KPI cards, and snapshot comparisons.",
+    help="This year controls all snapshot views.",
 )
 
 if "focus_country" not in st.session_state:
@@ -767,7 +750,7 @@ st.sidebar.selectbox(
     key="focus_country_dropdown",
     placeholder="Choose a country",
     on_change=sync_focus_country_from_dropdown,
-    help="Choose a country manually, or click a country in the map, ranking, scatter, trend, or generation-mix chart.",
+    help="Choose a country manually, or click a country in the ranking, scatter, trend, generation mix, or map if enabled.",
 )
 
 st.sidebar.button(
@@ -788,10 +771,7 @@ country_scope = st.sidebar.multiselect(
     "Optional country filter for ranking and scatter",
     options=all_countries,
     default=[],
-    help=(
-        "Optional. Leave empty to compare all countries. "
-        "This filter does not affect the global map, KPI summary, or electricity-generation mix chart."
-    ),
+    help="Optional. Leave empty to show all countries. This does not affect the map.",
 )
 
 gdp_group_order = [
@@ -808,31 +788,28 @@ available_gdp_groups = [
 ]
 
 selected_gdp_groups = st.sidebar.multiselect(
-    "GDP per capita groups",
+    "GDP per capita groups for ranking and scatter",
     options=available_gdp_groups,
     default=[],
-    help="Optional. Leave empty to include all GDP groups.",
+    help="Optional. Leave empty to include all GDP groups. This does not affect the map.",
 )
 
 map_metric_label = st.sidebar.selectbox(
     "Map metric",
     options=list(available_metric_options.keys()),
     index=metric_index("Low-carbon electricity (% electricity)"),
-    help="Choose one metric to colour the global map.",
 )
 
 time_metric_label = st.sidebar.selectbox(
     "Time-series metric",
     options=list(available_metric_options.keys()),
     index=metric_index("Low-carbon electricity (% electricity)"),
-    help="Choose one metric to show over time.",
 )
 
 ranking_metric_label = st.sidebar.selectbox(
     "Ranking metric",
     options=list(available_metric_options.keys()),
     index=metric_index("Renewable energy share (% final energy)"),
-    help="Choose one metric for the country ranking.",
 )
 
 top_n = st.sidebar.slider(
@@ -856,9 +833,9 @@ st.sidebar.markdown(
     """
     <div class="small-note">
     <b>Linked interaction:</b><br>
-    Click/select a country in the ranking chart, scatter plot, trend chart, generation-mix chart,
-    or map if enabled. The selected country is highlighted in orange where colour is not already
-    encoding another variable. Click the same selected country again to clear the selection.
+    Click/select a country in the ranking chart, scatter plot, trend chart, generation mix chart,
+    or map if enabled. The selected country is highlighted in orange across the dashboard.
+    Country and GDP filters do not affect the global map.
     </div>
     """,
     unsafe_allow_html=True,
@@ -871,21 +848,19 @@ st.sidebar.markdown(
 
 full_year_df = working_df[working_df["year"] == snapshot_year].copy()
 
-snapshot_df = full_year_df.copy()
+# IMPORTANT:
+# map_year_df is intentionally NOT affected by country_scope or selected_gdp_groups.
+# This keeps the map global regardless of other dashboard filters.
+map_year_df = full_year_df.copy()
 
-# GDP group filter affects the dashboard-level snapshot, including map/KPIs.
+# comparison_df is used for KPI, ranking, scatter, and comparison views.
+comparison_df = full_year_df.copy()
+
 if selected_gdp_groups:
-    snapshot_df = snapshot_df[snapshot_df["gdp_group"].isin(selected_gdp_groups)]
-
-# Important design fix:
-# The map remains global. The optional country filter only affects ranking and scatter.
-map_snapshot_df = snapshot_df.copy()
-comparison_snapshot_df = snapshot_df.copy()
+    comparison_df = comparison_df[comparison_df["gdp_group"].isin(selected_gdp_groups)]
 
 if country_scope:
-    comparison_snapshot_df = comparison_snapshot_df[
-        comparison_snapshot_df["entity"].isin(country_scope)
-    ].copy()
+    comparison_df = comparison_df[comparison_df["entity"].isin(country_scope)]
 
 map_metric_col = available_metric_options[map_metric_label]
 time_metric_col = available_metric_options[time_metric_label]
@@ -893,10 +868,10 @@ ranking_metric_col = available_metric_options[ranking_metric_label]
 
 focus_key = normalise_name(focus_country if focus_country else "none")
 map_key = f"map_chart_{focus_key}_{snapshot_year}_{normalise_name(map_metric_label)}_{enable_map_click_selection}"
-rank_key = f"ranking_chart_{focus_key}_{snapshot_year}_{normalise_name(ranking_metric_label)}_{top_n}_{len(country_scope)}"
-scatter_key = f"scatter_chart_{focus_key}_{snapshot_year}_{len(country_scope)}"
+rank_key = f"ranking_chart_{focus_key}_{snapshot_year}_{normalise_name(ranking_metric_label)}"
+scatter_key = f"scatter_chart_{focus_key}_{snapshot_year}"
 trend_key = f"trend_chart_{focus_key}_{snapshot_year}_{normalise_name(time_metric_label)}"
-generation_mix_key = f"generation_mix_{focus_key}_{snapshot_year}_{top_n}"
+generation_mix_key = f"generation_mix_{focus_key}_{snapshot_year}"
 
 
 # ============================================================
@@ -914,7 +889,7 @@ st.markdown(
 )
 
 st.caption(
-    "Design note: filters, linked country selection, consistent encodings, and focus-country drill-down views are used to support exploratory analysis."
+    "Design note: the map remains global for geographic context. Country and GDP filters apply to the comparison charts, not to the map."
 )
 
 
@@ -924,36 +899,36 @@ st.caption(
 
 st.subheader(f"Snapshot summary for {snapshot_year}")
 
-countries_with_data = snapshot_df["entity"].nunique()
+countries_with_data = comparison_df["entity"].nunique()
 
 avg_electricity_access = (
-    snapshot_df["electricity_access_pct"].mean()
-    if "electricity_access_pct" in snapshot_df.columns
+    comparison_df["electricity_access_pct"].mean()
+    if "electricity_access_pct" in comparison_df.columns
     else np.nan
 )
 
 avg_low_carbon = (
-    snapshot_df["low_carbon_electricity_pct"].mean()
-    if "low_carbon_electricity_pct" in snapshot_df.columns
+    comparison_df["low_carbon_electricity_pct"].mean()
+    if "low_carbon_electricity_pct" in comparison_df.columns
     else np.nan
 )
 
 median_co2_person = (
-    snapshot_df["co2_person_tonnes"].median()
-    if "co2_person_tonnes" in snapshot_df.columns
+    comparison_df["co2_person_tonnes"].median()
+    if "co2_person_tonnes" in comparison_df.columns
     else np.nan
 )
 
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
 with kpi1:
-    make_kpi("Countries with data", f"{countries_with_data:,}", "after dashboard-level filters")
+    make_kpi("Countries in comparison set", f"{countries_with_data:,}", "after comparison filters")
 
 with kpi2:
     make_kpi(
         "Average electricity access",
         format_value(avg_electricity_access, "%", 1),
-        "mean across countries",
+        "mean across comparison set",
     )
 
 with kpi3:
@@ -974,23 +949,28 @@ st.divider()
 
 
 # ============================================================
-# VISUAL 1: LARGE GLOBAL MAP
+# VISUAL 1: GLOBAL MAP
 # ============================================================
 
 st.markdown(f"### 1. Global geographic pattern: {map_metric_label} ({snapshot_year})")
 
-map_df = map_snapshot_df.dropna(subset=[map_metric_col]).copy()
+map_df = map_year_df.dropna(subset=[map_metric_col]).copy()
 
-if focus_country is not None:
-    map_df = append_focus_row(
-        map_df,
-        full_year_df,
-        focus_country,
-        required_cols=[],
-    )
+map_countries_with_data = map_df["entity"].nunique()
+
+st.markdown(
+    f"""
+    <div class="chart-note">
+    The map remains global. Country filters, GDP filters, and comparison selections do not reduce the map.
+    Countries without data for the selected map metric appear blank.
+    Map coverage for this metric/year: <b>{map_countries_with_data}</b> countries.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if map_df.empty:
-    no_data_message("The selected map metric has no valid values for the current year and filters.")
+    no_data_message("The selected map metric has no valid values for the current year.")
 else:
     fig_map = px.choropleth(
         map_df,
@@ -1014,8 +994,8 @@ else:
     )
 
     if focus_country is not None:
-        selected_country_map = full_year_df[
-            full_year_df["entity"] == focus_country
+        selected_country_map = map_year_df[
+            map_year_df["entity"] == focus_country
         ].head(1).copy()
 
         if not selected_country_map.empty:
@@ -1027,7 +1007,7 @@ else:
                     colorscale=[[0, SELECTED_COLOUR], [1, SELECTED_COLOUR]],
                     showscale=False,
                     marker_line_color="#111827",
-                    marker_line_width=2.0,
+                    marker_line_width=2.2,
                     customdata=selected_country_map[
                         ["entity", map_metric_col, "gdp_group"]
                     ].to_numpy(),
@@ -1041,14 +1021,14 @@ else:
             )
 
     fig_map.update_layout(
-        height=680,
-        margin=dict(l=0, r=80, t=10, b=0),
+        height=760,
+        margin=dict(l=0, r=25, t=10, b=0),
 
         coloraxis_colorbar=dict(
             title=map_metric_label,
-            thickness=14,
-            len=0.58,
-            x=0.93,
+            thickness=12,
+            len=0.50,
+            x=0.985,
             xanchor="left",
             y=0.50,
             yanchor="middle",
@@ -1056,14 +1036,14 @@ else:
 
         geo=dict(
             domain=dict(
-                x=[0.00, 0.90],
+                x=[0.00, 0.965],
                 y=[0.00, 1.00],
             ),
             showframe=False,
             showcoastlines=False,
             projection_type="natural earth",
-            projection_scale=1.35,
-            center=dict(lat=8, lon=5),
+            projection_scale=1.12,
+            center=dict(lat=10, lon=5),
         ),
 
         showlegend=False,
@@ -1077,11 +1057,11 @@ else:
 
 if focus_country:
     st.caption(
-        "Question answered: Which countries stand out geographically? The orange country is the selected focus country. The map remains global even when a country comparison filter is used."
+        "Question answered: Which countries stand out geographically? The orange country is the selected focus country. The map remains global even when other filters are applied."
     )
 else:
     st.caption(
-        "Question answered: Which countries stand out geographically? No country is selected yet. Use the ranking, scatter, trend chart, generation-mix chart, sidebar, or enable map click selection."
+        "Question answered: Which countries stand out geographically? No country is selected yet. The map remains global even when other filters are applied."
     )
 
 st.divider()
@@ -1100,23 +1080,22 @@ rank_col, scatter_col = st.columns([1, 1])
 
 with rank_col:
     title_selected = " + selected country" if focus_country else ""
-    scope_note = "within selected country filter" if country_scope else "globally"
-
     st.markdown(
         f"### 2. Top {top_n} countries{title_selected}: {ranking_metric_label} ({snapshot_year})"
     )
 
     st.markdown(
-        f"""
+        """
         <div class="chart-note">
-        Ranking is calculated {scope_note}. If a selected country is not in the top group, it is added with ★.
+        Ranking uses the optional country and GDP filters. If a selected country is outside the top group,
+        it is added with a ★ for context.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     ranking_df = prepare_ranking_data(
-        comparison_snapshot_df,
+        comparison_df,
         full_year_df,
         ranking_metric_col,
         top_n,
@@ -1148,7 +1127,7 @@ with rank_col:
         )
 
         fig_rank.update_layout(
-            height=540,
+            height=520,
             margin=dict(l=10, r=20, t=20, b=45),
             xaxis_title=ranking_metric_label,
             yaxis_title="",
@@ -1178,24 +1157,14 @@ with scatter_col:
         f"### 3. Development, emissions, and low-carbon electricity ({snapshot_year})"
     )
 
-    if country_scope:
-        st.markdown(
-            """
-            <div class="chart-note">
-            This scatter plot uses the optional country filter. Clear the country filter to return to the full-country comparison.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            """
-            <div class="chart-note">
-            Each point is a country. Bubble size approximates population; colour shows low-carbon electricity share.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        """
+        <div class="chart-note">
+        Scatter uses the optional country and GDP filters. Bubble size estimates population where available.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     scatter_required = [
         "gdp_per_capita",
@@ -1203,7 +1172,7 @@ with scatter_col:
         "low_carbon_electricity_pct",
     ]
 
-    scatter_df = comparison_snapshot_df.dropna(subset=scatter_required).copy()
+    scatter_df = comparison_df.dropna(subset=scatter_required).copy()
     scatter_df = scatter_df[scatter_df["gdp_per_capita"] > 0].copy()
 
     if focus_country is not None:
@@ -1322,7 +1291,7 @@ with scatter_col:
         )
 
         fig_scatter.update_layout(
-            height=540,
+            height=520,
             margin=dict(l=10, r=20, t=20, b=45),
             plot_bgcolor="white",
             showlegend=False,
@@ -1352,31 +1321,16 @@ trend_col, generation_mix_col = st.columns([1, 1])
 # ============================================================
 
 with trend_col:
-    if focus_country:
-        st.markdown(
-            f"### 4. Selected country trend vs comparison countries: {time_metric_label}"
-        )
-        st.markdown(
-            """
-            <div class="chart-note">
-            Orange line = selected country. Other lines show comparison countries from the sidebar,
-            or representative countries when no manual comparison set is chosen.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            f"### 4. Comparison-country trends: {time_metric_label}"
-        )
-        st.markdown(
-            """
-            <div class="chart-note">
-            No country is selected. Lines show representative countries across the selected indicator range.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown(f"### 4. Selected country trend vs comparison countries: {time_metric_label}")
+
+    st.markdown(
+        """
+        <div class="chart-note">
+        Orange line = selected country. Other lines are sidebar comparison countries, or representative countries if none are chosen.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if countries_for_trend:
         trend_countries = countries_for_trend.copy()
@@ -1476,7 +1430,7 @@ with trend_col:
         )
 
         fig_trend.update_layout(
-            height=540,
+            height=520,
             margin=dict(l=10, r=20, t=20, b=45),
             plot_bgcolor="white",
             legend_title_text="Country",
@@ -1512,33 +1466,19 @@ with trend_col:
 # ============================================================
 
 with generation_mix_col:
-    if focus_country:
-        st.markdown(
-            f"### 5. Top electricity producers + selected country: generation mix ({snapshot_year})"
-        )
-        st.markdown(
-            """
-            <div class="chart-note">
-            Rows show the largest electricity producers in the selected year.
-            The selected country is added with ★ if it is not already in the top group.
-            Colour encodes electricity source, so the selected country is marked by label rather than colour.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            f"### 5. Top electricity producers: generation mix ({snapshot_year})"
-        )
-        st.markdown(
-            """
-            <div class="chart-note">
-            Rows show countries with the largest total electricity generation in the selected year.
-            Bar segments show the percentage split between fossil fuels, nuclear, and renewables.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    title_selected = " + selected country" if focus_country else ""
+    st.markdown(
+        f"### 5. Top electricity producers{title_selected}: generation mix ({snapshot_year})"
+    )
+
+    st.markdown(
+        """
+        <div class="chart-note">
+        Rows show the largest electricity producers in the selected year. The selected country is added with ★ if it is not already in the top group. Colour encodes electricity source.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     generation_cols = [
         "electricity_fossil_twh",
@@ -1552,7 +1492,7 @@ with generation_mix_col:
         "electricity_renewables_twh": "Renewables",
     }
 
-    generation_mix_df = snapshot_df[["entity"] + generation_cols].copy()
+    generation_mix_df = full_year_df[["entity"] + generation_cols].copy()
     generation_mix_df["total_generation_twh"] = generation_mix_df[generation_cols].sum(
         axis=1,
         min_count=1,
@@ -1664,7 +1604,7 @@ with generation_mix_col:
         )
 
         fig_generation_mix.update_layout(
-            height=540,
+            height=520,
             margin=dict(l=10, r=20, t=20, b=45),
             plot_bgcolor="white",
             barmode="stack",
@@ -1705,14 +1645,9 @@ with generation_mix_col:
             valid_country_set,
         )
 
-    if focus_country:
-        st.caption(
-            "Question answered: How does the selected country’s electricity-generation mix compare with major electricity producers? The ★ marks the selected country; colours show energy source."
-        )
-    else:
-        st.caption(
-            "Question answered: How is electricity generation split between fossil fuels, nuclear, and renewables among the largest electricity producers?"
-        )
+    st.caption(
+        "Question answered: How does the selected country’s electricity-generation mix compare with major electricity producers? The ★ marks the selected country; colours show energy source."
+    )
 
 st.divider()
 
@@ -1948,8 +1883,8 @@ with coverage_col1:
         f"""
         - Current snapshot year: **{snapshot_year}**
         - Current focus country: **{current_focus_text}**
-        - Countries in dashboard snapshot after GDP filters: **{countries_with_data:,}**
-        - Optional country filter for ranking/scatter: **{len(country_scope) if country_scope else "None"}**
+        - Countries in comparison set after filters: **{countries_with_data:,}**
+        - Countries shown on map for selected metric/year: **{map_countries_with_data:,}**
         - CO₂/person source: **{co2_source}**
         """
     )
@@ -1957,12 +1892,9 @@ with coverage_col1:
 with coverage_col2:
     st.markdown(
         f"""
-        - The large map remains global to preserve geographic context.
-        - The optional country filter affects only the ranking and scatter visuals.
+        - The global map is **not affected** by country filters, GDP filters, or comparison selections.
         - Map click selection is currently **{"enabled" if enable_map_click_selection else "disabled"}**.
-        - Orange is used only for selected-country highlighting where colour is not already encoding another variable.
-        - In the generation-mix chart, colour encodes electricity source, so the selected country is marked with **★** instead.
-        - The generation-mix chart shows the largest electricity producers for the selected year, with the selected country appended when relevant.
+        - Orange is reserved for the selected country only.
         - Click the selected country again to clear the selection.
         - Ranking, scatter, trend, and generation-mix charts support linked country selection.
         - The dashboard should be interpreted as exploratory, not causal.
