@@ -402,6 +402,12 @@ def extract_country_from_selection(event, valid_countries):
 
 
 def update_focus_country(event, source_name, valid_countries):
+    """
+    Linked-selection logic.
+    Important Streamlit rule:
+    Do NOT update the selectbox widget key here after it has been rendered.
+    Only update the neutral state key: focus_country.
+    """
     clicked_country = extract_country_from_selection(event, valid_countries)
 
     if clicked_country and clicked_country in valid_countries:
@@ -409,12 +415,10 @@ def update_focus_country(event, source_name, valid_countries):
 
         if clicked_country == current_country:
             st.session_state["focus_country"] = None
-            st.session_state["focus_country_dropdown"] = None
             st.toast(f"{clicked_country} was unselected.")
             st.rerun()
         else:
             st.session_state["focus_country"] = clicked_country
-            st.session_state["focus_country_dropdown"] = clicked_country
             st.toast(f"Selected country changed to {clicked_country} from {source_name}.")
             st.rerun()
 
@@ -721,6 +725,8 @@ snapshot_year = st.sidebar.slider(
     help="This year controls all snapshot views.",
 )
 
+# ---------- Session state setup ----------
+
 if "focus_country" not in st.session_state:
     st.session_state["focus_country"] = None
 
@@ -730,8 +736,18 @@ if st.session_state["focus_country"] not in all_countries:
 if "focus_country_dropdown" not in st.session_state:
     st.session_state["focus_country_dropdown"] = None
 
+# This sync is safe because it happens before the selectbox is rendered.
 if st.session_state["focus_country_dropdown"] != st.session_state["focus_country"]:
     st.session_state["focus_country_dropdown"] = st.session_state["focus_country"]
+
+if "countries_for_trend" not in st.session_state:
+    st.session_state["countries_for_trend"] = []
+
+if "country_scope" not in st.session_state:
+    st.session_state["country_scope"] = []
+
+if "selected_gdp_groups" not in st.session_state:
+    st.session_state["selected_gdp_groups"] = []
 
 
 def sync_focus_country_from_dropdown():
@@ -741,6 +757,12 @@ def sync_focus_country_from_dropdown():
 def clear_focus_country():
     st.session_state["focus_country"] = None
     st.session_state["focus_country_dropdown"] = None
+
+
+def reset_comparison_filters():
+    st.session_state["countries_for_trend"] = []
+    st.session_state["country_scope"] = []
+    st.session_state["selected_gdp_groups"] = []
 
 
 st.sidebar.selectbox(
@@ -758,19 +780,17 @@ st.sidebar.button(
     on_click=clear_focus_country,
 )
 
-focus_country = st.session_state["focus_country"]
-
 countries_for_trend = st.sidebar.multiselect(
     "Countries for time-series comparison",
     options=all_countries,
-    default=[],
+    key="countries_for_trend",
     help="Optional. If left empty, the trend chart shows representative countries across the selected metric range.",
 )
 
 country_scope = st.sidebar.multiselect(
     "Optional country filter for ranking and scatter",
     options=all_countries,
-    default=[],
+    key="country_scope",
     help="Optional. Leave empty to show all countries. This does not affect the map.",
 )
 
@@ -790,8 +810,13 @@ available_gdp_groups = [
 selected_gdp_groups = st.sidebar.multiselect(
     "GDP per capita groups for ranking and scatter",
     options=available_gdp_groups,
-    default=[],
+    key="selected_gdp_groups",
     help="Optional. Leave empty to include all GDP groups. This does not affect the map.",
+)
+
+st.sidebar.button(
+    "Reset comparison filters",
+    on_click=reset_comparison_filters,
 )
 
 map_metric_label = st.sidebar.selectbox(
@@ -841,6 +866,8 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 
+focus_country = st.session_state["focus_country"]
+
 
 # ============================================================
 # FILTER DATA
@@ -848,12 +875,10 @@ st.sidebar.markdown(
 
 full_year_df = working_df[working_df["year"] == snapshot_year].copy()
 
-# IMPORTANT:
-# map_year_df is intentionally NOT affected by country_scope or selected_gdp_groups.
-# This keeps the map global regardless of other dashboard filters.
+# The map stays global. It is not affected by country_scope or selected_gdp_groups.
 map_year_df = full_year_df.copy()
 
-# comparison_df is used for KPI, ranking, scatter, and comparison views.
+# Comparison charts can be filtered.
 comparison_df = full_year_df.copy()
 
 if selected_gdp_groups:
@@ -955,7 +980,6 @@ st.divider()
 st.markdown(f"### 1. Global geographic pattern: {map_metric_label} ({snapshot_year})")
 
 map_df = map_year_df.dropna(subset=[map_metric_col]).copy()
-
 map_countries_with_data = map_df["entity"].nunique()
 
 st.markdown(
@@ -1023,7 +1047,6 @@ else:
     fig_map.update_layout(
         height=760,
         margin=dict(l=0, r=25, t=10, b=0),
-
         coloraxis_colorbar=dict(
             title=map_metric_label,
             thickness=12,
@@ -1033,19 +1056,14 @@ else:
             y=0.50,
             yanchor="middle",
         ),
-
         geo=dict(
-            domain=dict(
-                x=[0.00, 0.965],
-                y=[0.00, 1.00],
-            ),
+            domain=dict(x=[0.00, 0.965], y=[0.00, 1.00]),
             showframe=False,
             showcoastlines=False,
             projection_type="natural earth",
             projection_scale=1.12,
             center=dict(lat=10, lon=5),
         ),
-
         showlegend=False,
     )
 
